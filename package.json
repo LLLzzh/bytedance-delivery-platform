@@ -19,5 +19,10 @@
     "turbo": "^2.6.1"
   },
   "packageManager": "pnpm@8.15.6",
-  "name": "my-turborepo"
+  "name": "my-turborepo",
+  
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }

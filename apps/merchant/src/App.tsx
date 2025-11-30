@@ -1,77 +1,18 @@
-import React, { useState } from "react";
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  useNavigate,
-  useLocation,
-  Outlet,
-  Navigate,
-} from "react-router-dom";
-import { Layout, Menu, theme, Typography, Button, Card } from "antd";
-import {
-  DashboardOutlined,
-  CarOutlined,
-  EnvironmentOutlined,
-  RocketOutlined,
-} from "@ant-design/icons";
-import type { MenuProps } from "antd";
-import FenceConfigPage from "./pages/FenceConfig";
-import RouteSelector from "./components/RouteSelector";
+// merchant/src/App.tsx
+import React, { useState } from 'react';
 
-const { Header, Content, Sider } = Layout;
+// ✅ 添加这些组件的 import
+import { Layout, Menu, MenuProps, theme, Typography } from 'antd'; // 文本组件
+import { CarOutlined, DashboardOutlined, EnvironmentOutlined, RocketOutlined } from '@ant-design/icons'; // 图标
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, Outlet } from 'react-router-dom'; // 路由
 
-// --- 1. Page Components ---
 
-// A. Order Dispatch Page
-// 这个页面之后要写订单列表，现在暂时只放了发货按钮，只是想看下地图的效果，之后请根据地图组件调整布局
-const OrderDispatchPage: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Card
-        title="订单发货管理"
-        style={{
-          width: 400,
-          textAlign: "center",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-        }}
-      >
-        <p style={{ marginBottom: 24, color: "#666" }}>
-          点击下方按钮开始模拟发货流程
-        </p>
-        <Button
-          type="primary"
-          size="large"
-          icon={<RocketOutlined />}
-          onClick={() => setIsModalOpen(true)}
-          style={{ width: "100%" }}
-        >
-          立即发货
-        </Button>
-      </Card>
-
-      <RouteSelector
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onConfirm={(route) => {
-          console.log("Selected route:", route);
-          setIsModalOpen(false);
-        }}
-        startLngLat={[116.397428, 39.90923]}
-        endLngLat={[116.497428, 39.91923]}
-      />
-    </div>
-  );
-};
+import FenceConfigPage from './pages/FenceConfig';
+import { Content, Header } from 'antd/es/layout/layout';
+import Sider from 'antd/es/layout/Sider';
+import OrderDispatchPage from './pages/FenceConfig/OrderDispatchPage';
+  
 
 // B. Delivery Zone Page (Wrapper for FenceConfig)
 const DeliveryZonePage: React.FC = () => {
@@ -257,6 +198,7 @@ const App: React.FC = () => {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="DeliveryDispatch" element={<OrderDispatchPage />} />
           <Route path="FenceConfig" element={<DeliveryZonePage />} />
+          
         </Route>
       </Routes>
     </BrowserRouter>
