@@ -10,7 +10,11 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@ant-design/icons": "^6.1.0",
     "@repo/ui": "workspace:*",
+    "antd": "^6.0.0",
+    "antd-mobile": "^5.41.1",
+    "axios": "^1.13.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.9.6"
