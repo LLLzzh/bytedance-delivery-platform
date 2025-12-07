@@ -32,3 +32,17 @@ export const CreateOrderSchema = z
     merchantId: z.string().min(1, "商家ID不能为空"),
   })
   .strict("请求体中包含未定义的额外字段"); // 推荐使用 .strict() 避免传输不必要的字段
+
+export const ShippingSchema = z
+  .object({
+    // 配送方式现在由 ruleId 承载
+    ruleId: z.number().int().positive("时效规则ID必须是正整数"),
+
+    // 预估路径：必须是数组，每个元素是 [number, number] 坐标
+    routePath: z
+      .array(
+        z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])
+      )
+      .min(2, "预估路径至少包含起点和终点两个坐标点"),
+  })
+  .strict("请求体中包含未定义的额外字段");

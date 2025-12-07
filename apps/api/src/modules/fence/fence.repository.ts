@@ -1,3 +1,5 @@
+// src/modules/fence/fence.repository.ts
+
 import { query } from "../../config/db.js";
 import { createGeographyExpression } from "../../utils/geo.utils.js";
 import { FenceData, CreateFenceDTO, FenceRow } from "./fence.types.js";
@@ -11,18 +13,26 @@ import { FenceData, CreateFenceDTO, FenceRow } from "./fence.types.js";
  * 假设数据库查询使用了 ST_AsGeoJSON(geometry) AS geojson_data
  */
 function mapRowToFenceData(row: FenceRow): FenceData {
-  // 假设 PostGIS 查询结果已将 coordinates 作为一个 GeoJSON 字符串返回
-  // 真实的坐标还原逻辑在 Service 层会更复杂，这里先以简单字段为主
+  // 假设 PostGIS 查询结果已将 geometry 作为一个 GeoJSON 字符串返回
   const geometryObj = row.geojson_data ? JSON.parse(row.geojson_data) : null;
 
-  // 简化处理：将 coordinates 字段从 JSONB 转换回 number[][]
+  // 坐标还原逻辑：从 GeoJSON 对象的 coordinates 属性中提取坐标
   let coordinates: number[][] = [];
+
   if (geometryObj && geometryObj.coordinates) {
     if (row.shape_type === "polygon") {
-      // 对于多边形，GeoJSON 格式是 [[[...]]]，我们只取第一层
-      coordinates = geometryObj.coordinates[0];
+      // 对于多边形，GeoJSON 格式是 [[[...]]] 或 [[...]]，取最外层数组
+      // 取第一个数组作为多边形的外部环
+      const coords = geometryObj.coordinates;
+      if (
+        Array.isArray(coords) &&
+        coords.length > 0 &&
+        Array.isArray(coords[0])
+      ) {
+        coordinates = coords[0];
+      }
     } else if (row.shape_type === "circle") {
-      // 对于点，GeoJSON 格式是 [...]，我们用一个数组包裹
+      // 对于点（圆心），GeoJSON 格式是 [...]，我们用一个数组包裹
       coordinates = [geometryObj.coordinates];
     }
   }
@@ -34,7 +44,7 @@ function mapRowToFenceData(row: FenceRow): FenceData {
     ruleId: row.rule_id,
     shapeType: row.shape_type,
     radius: parseFloat(row.radius as string), // 确保是 number 类型
-    coordinates: coordinates, // 已经通过 geojson 转换得到
+    coordinates: coordinates, // 从 GeoJSON 转换得到
     // geometry: geometryObj // 仅用于内部调试
   } as FenceData;
 }
@@ -49,31 +59,31 @@ export async function createFence(
 ): Promise<FenceData> {
   const { fenceName, fenceDesc, ruleId, shapeType, coordinates, radius } = data;
 
-  // 核心：将 TS 坐标转换为 PostGIS GEOGRAPHY 表达式
+  // 核心：将 TS 坐标转换为 PostGIS GEOGRAPHY 表达式 (例如 'ST_GeomFromText(...)' )
   const geographyExpression = createGeographyExpression(shapeType, coordinates);
 
   const sql = `
         INSERT INTO fences (
-            merchant_id, fence_name, fence_desc, rule_id, shape_type, radius, coordinates_json, geometry
+            merchant_id, fence_name, fence_desc, rule_id, shape_type, radius, geometry
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, ${geographyExpression}
+            $1, $2, $3, $4, $5, $6, ${geographyExpression}
         )
         RETURNING 
-            id, fence_name, fence_desc, rule_id, shape_type, radius, coordinates_json, 
+            id, fence_name, fence_desc, rule_id, shape_type, radius, 
             ST_AsGeoJSON(geometry) AS geojson_data;
     `;
 
   const params = [
-    merchantId,
-    fenceName,
-    fenceDesc,
-    ruleId,
-    shapeType,
-    radius,
-    JSON.stringify(coordinates), // 原始坐标存为 JSONB
+    merchantId, // $1
+    fenceName, // $2
+    fenceDesc, // $3
+    ruleId, // $4
+    shapeType, // $5
+    radius, // $6
+    // ❌ 移除 JSON.stringify(coordinates)
   ];
 
-  // 🔥🔥🔥 添加这两行来调试 🔥🔥🔥
+  // 🔥🔥🔥 DEBUG SQL 🔥🔥🔥
   console.log("--- DEBUG SQL ---");
   console.log("SQL:", sql);
   console.log("Params:", params);
@@ -94,7 +104,7 @@ export async function createFence(
 export async function findAllFences(merchantId: string): Promise<FenceData[]> {
   const sql = `
         SELECT 
-            f.id, f.fence_name, f.fence_desc, f.rule_id, f.shape_type, f.radius, f.coordinates_json,
+            f.id, f.fence_name, f.fence_desc, f.rule_id, f.shape_type, f.radius,
             -- 使用 PostGIS 函数将 GEOGRAPHY 字段转换为 GeoJSON 格式，便于 TS 处理
             ST_AsGeoJSON(f.geometry) AS geojson_data
         FROM fences f
@@ -119,8 +129,9 @@ export async function deleteFence(
         WHERE id = $1 AND merchant_id = $2;
     `;
 
-  await query(sql, [fenceId, merchantId]);
-  return true; // 实际应检查 rows 数量
+  const result = await query(sql, [fenceId, merchantId]);
+  // 检查 DELETE 操作是否影响了行数
+  return result.rowCount > 0;
 }
 
 // ----------------------------------------------------------------------
@@ -133,7 +144,7 @@ export async function findFenceById(
 ): Promise<FenceData | null> {
   const sql = `
         SELECT 
-            f.id, f.fence_name, f.fence_desc, f.rule_id, f.shape_type, f.radius, f.coordinates_json,
+            f.id, f.fence_name, f.fence_desc, f.rule_id, f.shape_type, f.radius,
             ST_AsGeoJSON(f.geometry) AS geojson_data
         FROM fences f
         WHERE f.id = $1 AND f.merchant_id = $2;
@@ -169,25 +180,24 @@ export async function updateFence(
             rule_id = $3,
             shape_type = $4,
             radius = $5,
-            coordinates_json = $6,
             geometry = ${geographyExpression}, -- 使用前面生成的 PostGIS 几何表达式
             updated_at = CURRENT_TIMESTAMP
         WHERE 
-            id = $7 AND merchant_id = $8
+            id = $6 AND merchant_id = $7
         RETURNING 
-            id, fence_name, fence_desc, rule_id, shape_type, radius, coordinates_json, 
+            id, fence_name, fence_desc, rule_id, shape_type, radius, 
             ST_AsGeoJSON(geometry) AS geojson_data;
     `;
 
   const params = [
-    fenceName,
-    fenceDesc,
-    ruleId,
-    shapeType,
-    radius,
-    JSON.stringify(coordinates), // 原始坐标存为 JSONB
-    fenceId,
-    merchantId,
+    fenceName, // $1
+    fenceDesc, // $2
+    ruleId, // $3
+    shapeType, // $4
+    radius, // $5
+    // ❌ 移除 JSON.stringify(coordinates)
+    fenceId, // $6
+    merchantId, // $7
   ];
 
   const rows: FenceRow[] = await query(sql, params);

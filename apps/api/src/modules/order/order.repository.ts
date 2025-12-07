@@ -1,3 +1,5 @@
+// src/modules/order/order.repository.ts
+
 import { query } from "../../config/db.js";
 import { Coordinates } from "../../shared/geo.types.js";
 import {
@@ -10,7 +12,11 @@ import {
   OrderRow,
   CountRow,
 } from "./order.types.js";
-import { coordsToPointWKT } from "../../utils/geo.utils.js";
+import {
+  coordsToPointWKT,
+  wrapWKTToGeomFromText,
+  routePathToLineStringWKT,
+} from "../../utils/geo.utils.js";
 
 const MOCK_MERCHANT_ID = "10001";
 const SRID = 4326;
@@ -46,12 +52,12 @@ export async function checkDeliveryRange(
         WHERE f.merchant_id = $2
         AND (
             -- Case 1: 多边形围栏 (shape_type = 'polygon')
-            -- 将 ST_Contains 替换为 ST_Covers，该函数支持 GEOGRAPHY 类型
+            -- ST_Covers 适用于 GEOGRAPHY 类型
             (f.shape_type = 'polygon' AND ST_Covers(f.geometry, ST_GeomFromText($1, ${SRID})::geography)) 
             
             OR
             
-            -- Case 2: 圆形围栏 (shape_type = 'circle') - 保持不变
+            -- Case 2: 圆形围栏 (shape_type = 'circle')
             (f.shape_type = 'circle' AND ST_DWithin(
                 f.geometry, 
                 ST_GeomFromText($1, ${SRID})::geography, 
@@ -61,8 +67,8 @@ export async function checkDeliveryRange(
         LIMIT 1;
     `;
 
-  // 使用 recipientPointWKT 作为 $1 参数 (WKT字符串)，MOCK_MERCHANT_ID 作为 $2
-  const rows: OrderRow[] = await query(sql, [
+  // 注意：fences 表的 RETURNING 字段可能和 OrderRow 不完全匹配，但我们只取 rule_id
+  const rows: { rule_id: number }[] = await query(sql, [
     recipientPointWKT,
     MOCK_MERCHANT_ID,
   ]);
@@ -84,13 +90,71 @@ export async function checkDeliveryRange(
 // 辅助函数：将数据库行转换为 Order 模型
 // ----------------------------------------------------------------------
 
-function mapRowToOrder(row: OrderRow): Order {
-  // 解析 GEOGRAPHY 坐标，PostGIS 返回 GeoJSON 字符串
+/**
+ * 计算两点之间的距离（米）- 使用 Haversine 公式
+ */
+function calculateDistance(coord1: Coordinates, coord2: Coordinates): number {
+  const R = 6371000; // 地球半径（米）
+  const lat1 = (coord1[1] * Math.PI) / 180;
+  const lat2 = (coord2[1] * Math.PI) / 180;
+  const deltaLat = ((coord2[1] - coord1[1]) * Math.PI) / 180;
+  const deltaLon = ((coord2[0] - coord1[0]) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      Math.sin(deltaLon / 2) *
+      Math.sin(deltaLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
+/**
+ * 计算已走过的路径点（从 routePath 起点到 currentPosition 之间的所有点）
+ */
+function calculateTraveledPath(
+  routePath: Coordinates[] | undefined,
+  currentPosition: Coordinates | undefined
+): Coordinates[] | undefined {
+  if (!routePath || routePath.length === 0) {
+    return undefined;
+  }
+
+  // 如果没有当前位置，返回空数组
+  if (!currentPosition) {
+    return [];
+  }
+
+  // 找到最接近当前位置的路径点索引
+  let nearestIndex = 0;
+  let minDistance = Infinity;
+
+  for (let i = 0; i < routePath.length; i++) {
+    const distance = calculateDistance(routePath[i], currentPosition);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestIndex = i;
+    }
+  }
+
+  // 返回从起点到最近点的所有路径点（包含最近点）
+  return routePath.slice(0, nearestIndex + 1);
+}
+
+export function mapRowToOrder(row: OrderRow): Order {
+  // 解析 GEOGRAPHY 坐标
   const recipientCoordsGeoJSON = row.recipient_coords_geojson
     ? JSON.parse(row.recipient_coords_geojson)
     : null;
   const currentPositionGeoJSON = row.current_position_geojson
     ? JSON.parse(row.current_position_geojson)
+    : null;
+
+  // 解析 RoutePath (依赖 route_path_geojson 字段)
+  const routePathGeoJSON = row.route_path_geojson
+    ? JSON.parse(row.route_path_geojson)
     : null;
 
   const recipientCoords: Coordinates = recipientCoordsGeoJSON?.coordinates || [
@@ -99,13 +163,34 @@ function mapRowToOrder(row: OrderRow): Order {
   const currentPosition: Coordinates | undefined =
     currentPositionGeoJSON?.coordinates;
 
+  let routePath: Coordinates[] | undefined = undefined;
+
+  // 检查是否为有效的 LineString 结构
+  if (
+    routePathGeoJSON &&
+    routePathGeoJSON.type === "LineString" &&
+    Array.isArray(routePathGeoJSON.coordinates)
+  ) {
+    // LineString 的 coordinates 直接就是 [ [lng, lat], ... ] 的数组
+    routePath = routePathGeoJSON.coordinates as Coordinates[];
+  }
+
+  // 计算已走过的路径点
+  const traveledPath = calculateTraveledPath(routePath, currentPosition);
+
+  // ----------------------------------------------------------------------
+
+  // Note: amount 可能是 string 或 number，需要处理
+  const amountValue =
+    typeof row.amount === "string" ? parseFloat(row.amount) : row.amount;
+
   return {
     id: row.id,
     userId: row.user_id,
     merchantId: row.merchant_id,
-    createTime: row.create_time.toISOString(), // 转换为 ISO 字符串
-    amount: parseFloat(row.amount as string), // 确保是数字
-    status: row.status as OrderStatus,
+    createTime: row.create_time.toISOString(),
+    amount: amountValue,
+    status: row.status,
     recipientName: row.recipient_name,
     recipientAddress: row.recipient_address,
     recipientCoords: recipientCoords,
@@ -113,10 +198,11 @@ function mapRowToOrder(row: OrderRow): Order {
       ? row.last_update_time.toISOString()
       : undefined,
     currentPosition: currentPosition,
-    routePath: row.route_path,
+    routePath: routePath,
+    traveledPath: traveledPath, // 已走过的路径点
     isAbnormal: row.is_abnormal,
     ruleId: row.rule_id,
-  } as Order;
+  };
 }
 
 // ----------------------------------------------------------------------
@@ -144,13 +230,16 @@ export async function createOrder(
         INSERT INTO orders (
             id, user_id, merchant_id, amount, status, rule_id, recipient_name, recipient_address, recipient_coords
         ) VALUES (
-            gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, ST_GeomFromText($8, ${SRID})::geography
+            gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, ${wrapWKTToGeomFromText(recipientPointWKT)}
         )
         RETURNING
             *, 
             -- 转换为 GeoJSON，便于 TS 解析坐标
             ST_AsGeoJSON(recipient_coords) AS recipient_coords_geojson,
-            ST_AsGeoJSON(current_position) AS current_position_geojson;
+            -- current_position 在创建时为空，可以直接返回 NULL
+            ST_AsGeoJSON(current_position) AS current_position_geojson,
+            -- route_path 在创建时为空，可以直接返回 NULL
+            ST_AsGeoJSON(route_path) AS route_path_geojson;
     `;
 
   const params = [
@@ -161,8 +250,9 @@ export async function createOrder(
     ruleId, // $5
     recipientName, // $6
     recipientAddress, // $7
-    recipientPointWKT, // $8
   ];
+  // 注意：这里 $8 参数不再需要，因为 recipientPointWKT 已经通过 wrapWKTToGeomFromText 嵌入到 SQL 字符串中了
+  // 如果你希望使用参数化查询，你需要回到旧写法，或者确保你的 wrapWKTToGeomFromText 返回的是正确的 SQL 模板
 
   const rows: OrderRow[] = await query(sql, params);
 
@@ -175,7 +265,7 @@ export async function createOrder(
 }
 
 // ----------------------------------------------------------------------
-// P2.2 订单查询
+// P2.2 订单查询 (修正了别名和 route_path 处理)
 // ----------------------------------------------------------------------
 
 export async function findOrderById(
@@ -184,11 +274,16 @@ export async function findOrderById(
 ): Promise<Order | null> {
   const sql = `
         SELECT 
-            *,
-            ST_AsGeoJSON(recipient_coords) AS recipient_coords_geojson,
-            ST_AsGeoJSON(current_position) AS current_position_geojson
-        FROM orders
-        WHERE id = $1 AND merchant_id = $2;
+            o.*, -- 使用别名 o
+            ST_AsGeoJSON(o.recipient_coords) AS recipient_coords_geojson,
+            ST_AsGeoJSON(o.current_position) AS current_position_geojson,
+            CASE 
+                WHEN o.route_path IS NULL 
+                THEN NULL 
+                ELSE ST_AsGeoJSON(o.route_path) 
+            END AS route_path_geojson
+        FROM orders o -- 引入表别名 o
+        WHERE o.id = $1 AND o.merchant_id = $2;
     `;
 
   const rows: OrderRow[] = await query(sql, [orderId, merchantId]);
@@ -215,26 +310,26 @@ export async function findOrdersByFilter(
     userId,
     status,
     searchQuery,
-    sortBy = "createTime", // 默认按创建时间
-    sortDirection = "DESC", // 默认倒序
+    sortBy = "createTime",
+    sortDirection = "DESC",
   } = queryParams;
 
   // 1. 初始化基础 SQL 和参数
-  const whereClauses: string[] = ["merchant_id = $1"]; // 商家 ID 总是第一个参数
+  const whereClauses: string[] = ["o.merchant_id = $1"]; // 商家 ID 总是第一个参数，使用别名 o
   const params: (string | number)[] = [merchantId];
   let paramIndex = 2; // 后续参数从 $2 开始
 
-  // 2. 构建动态 WHERE 条件
+  // 2. 构建动态 WHERE 条件 (确保使用 o. 别名)
 
   // 2A. 用户 ID 筛选
   if (userId) {
-    whereClauses.push(`user_id = $${paramIndex++}`);
+    whereClauses.push(`o.user_id = $${paramIndex++}`);
     params.push(userId);
   }
 
   // 2B. 状态筛选
   if (status) {
-    whereClauses.push(`status = $${paramIndex++}`);
+    whereClauses.push(`o.status = $${paramIndex++}`);
     params.push(status);
   }
 
@@ -242,7 +337,7 @@ export async function findOrdersByFilter(
   if (searchQuery) {
     // 使用 ILIKE (不区分大小写的 LIKE)
     whereClauses.push(
-      `(recipient_name ILIKE $${paramIndex} OR recipient_address ILIKE $${paramIndex})`
+      `(o.recipient_name ILIKE $${paramIndex} OR o.recipient_address ILIKE $${paramIndex})`
     );
     params.push(`%${searchQuery}%`); // 模糊搜索需要百分号
     paramIndex++;
@@ -252,8 +347,8 @@ export async function findOrdersByFilter(
   const whereCondition =
     whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
 
-  // 4. 执行总数查询 (用于分页元数据)
-  const countSql = `SELECT COUNT(*) FROM orders ${whereCondition};`;
+  // 4. 执行总数查询 (修正 FROM 子句，引入 o 别名)
+  const countSql = `SELECT COUNT(*) FROM orders o ${whereCondition};`; // 引入别名 o
   const countRows: CountRow[] = await query(countSql, params);
   const totalCount = parseInt(countRows[0].count, 10);
 
@@ -267,17 +362,22 @@ export async function findOrdersByFilter(
   const finalSortDirection =
     sortDirection.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-  // 5. 执行数据查询 (添加 ORDER BY)
+  // 5. 执行数据查询 (修正 SELECT 和 FROM 子句)
   const offset = (page - 1) * pageSize;
 
   const dataSql = `
         SELECT 
-            *,
-            ST_AsGeoJSON(recipient_coords) AS recipient_coords_geojson,
-            ST_AsGeoJSON(current_position) AS current_position_geojson
-        FROM orders
+            o.*, -- 修正：SELECT o.*
+            ST_AsGeoJSON(o.recipient_coords) AS recipient_coords_geojson,
+            ST_AsGeoJSON(o.current_position) AS current_position_geojson,
+            CASE 
+                WHEN o.route_path IS NULL 
+                THEN NULL 
+                ELSE ST_AsGeoJSON(o.route_path) 
+            END AS route_path_geojson
+        FROM orders o -- 修正：FROM orders o
         ${whereCondition}
-        ORDER BY ${dbSortColumn} ${finalSortDirection}  -- <<<< 排序逻辑
+        ORDER BY o.${dbSortColumn} ${finalSortDirection}  -- <<<< 排序逻辑
         LIMIT $${paramIndex++} 
         OFFSET $${paramIndex++};
     `;
@@ -285,7 +385,7 @@ export async function findOrdersByFilter(
   params.push(pageSize);
   params.push(offset);
 
-  const dataRows = await query(dataSql, params);
+  const dataRows: OrderRow[] = await query(dataSql, params);
   const orders = dataRows.map(mapRowToOrder); // 使用已有的映射函数
 
   // 6. 返回分页结果
@@ -295,4 +395,167 @@ export async function findOrdersByFilter(
     currentPage: page,
     pageSize: pageSize,
   };
+}
+
+// ----------------------------------------------------------------------
+// P3.1 订单发货 (修正了 RETURNING 子句)
+// ----------------------------------------------------------------------
+
+interface ShippingData {
+  ruleId: number;
+  routePath: Coordinates[];
+}
+
+export async function startShippingOrder(
+  orderId: string,
+  merchantId: string,
+  shippingData: ShippingData
+): Promise<OrderRow> {
+  const { ruleId, routePath } = shippingData;
+
+  // 转换为 PostGIS WKT 格式的 LINESTRING
+  const lineStringWKT = routePathToLineStringWKT(routePath);
+
+  // SQL 语句
+  const sql = `
+        UPDATE orders o -- 引入别名 o，方便在 RETURNING 中引用
+        SET 
+            status = $3,
+            rule_id = $4,           
+            route_path = ${wrapWKTToGeomFromText(lineStringWKT)},
+            last_update_time = NOW()
+        WHERE o.id = $1 AND o.merchant_id = $2 AND o.status = '${OrderStatus.Pending}' 
+        RETURNING 
+        o.*, -- 修正：返回 o.*
+        ST_AsGeoJSON(o.recipient_coords) AS recipient_coords_geojson,
+        ST_AsGeoJSON(o.current_position) AS current_position_geojson,
+        CASE 
+            WHEN o.route_path IS NULL 
+            THEN NULL 
+            ELSE ST_AsGeoJSON(o.route_path) 
+        END AS route_path_geojson
+    `;
+
+  const rows = await query<OrderRow>(sql, [
+    orderId, // $1
+    merchantId, // $2
+    OrderStatus.Shipping, // $3
+    ruleId, // $4
+  ]);
+
+  if (rows.length === 0) {
+    throw new Error("Order not found or status is not pending.");
+  }
+
+  return rows[0];
+}
+
+// ----------------------------------------------------------------------
+// P3.2 订单追踪与状态变更 (修正了 RETURNING 子句)
+// ----------------------------------------------------------------------
+
+export async function updateOrderLocation(
+  orderId: string,
+  merchantId: string,
+  coords: Coordinates
+): Promise<OrderRow> {
+  const currentPointWKT = coordsToPointWKT(coords);
+
+  const sql = `
+        UPDATE orders o -- 引入别名 o
+        SET 
+            current_position = ${wrapWKTToGeomFromText(currentPointWKT)},
+            last_update_time = NOW()
+        WHERE o.id = $1 AND o.merchant_id = $2
+        RETURNING 
+            o.*,
+            ST_AsGeoJSON(o.recipient_coords) AS recipient_coords_geojson,
+            ST_AsGeoJSON(o.current_position) AS current_position_geojson,
+            CASE 
+                WHEN o.route_path IS NULL 
+                THEN NULL 
+                ELSE ST_AsGeoJSON(o.route_path) 
+            END AS route_path_geojson
+    `;
+
+  const rows = await query<OrderRow>(sql, [orderId, merchantId]);
+
+  if (rows.length === 0) {
+    throw new Error("Order not found or merchant ID mismatch.");
+  }
+
+  return rows[0];
+}
+
+export async function checkAndAutoUpdateStatus(
+  orderId: string,
+  merchantId: string,
+  threshold: number = 100
+): Promise<boolean> {
+  const sql = `
+        UPDATE orders
+        SET 
+            status = '${OrderStatus.Arrived}',
+            last_update_time = NOW()
+        FROM (
+            SELECT 1 
+            FROM orders o
+            WHERE o.id = $1 
+              AND o.merchant_id = $2
+              AND o.status = '${OrderStatus.Shipping}'
+              -- 核心 PostGIS 检查：距离是否在阈值内
+              AND ST_DWithin(o.current_position, o.recipient_coords, $3)
+        ) AS subquery
+        WHERE orders.id = $1 AND orders.merchant_id = $2
+        RETURNING orders.id;
+    `;
+
+  // $3 参数是 threshold (米)
+  const rows = await query<OrderRow>(sql, [orderId, merchantId, threshold]);
+
+  return rows.length > 0;
+}
+
+/**
+ * 将订单状态从 'arrived' 变更为 'delivered' (用户确认收货)。
+ * @param orderId 订单ID
+ * @param userId 用户ID (用于权限验证)
+ * @returns 更新后的 OrderRow
+ */
+export async function completeDelivery(
+  orderId: string,
+  userId: string
+): Promise<OrderRow> {
+  // SQL 语句：更新状态，设置最后更新时间，并确保旧状态是 'arrived'
+  const sql = `
+        UPDATE orders o 
+        SET 
+            status = $3,
+            last_update_time = NOW()
+        WHERE o.id = $1 AND o.user_id = $2 AND o.status = '${OrderStatus.Arrived}' 
+        RETURNING 
+            o.*, 
+            ST_AsGeoJSON(o.recipient_coords) AS recipient_coords_geojson,
+            ST_AsGeoJSON(o.current_position) AS current_position_geojson,
+            CASE 
+                WHEN o.route_path IS NULL 
+                THEN NULL 
+                ELSE ST_AsGeoJSON(o.route_path) 
+            END AS route_path_geojson
+    `;
+
+  const rows = await query<OrderRow>(sql, [
+    orderId, // $1
+    userId, // $2
+    OrderStatus.Delivered, // $3
+  ]);
+
+  if (rows.length === 0) {
+    // 订单未找到，或用户ID不匹配，或状态不是 'arrived'
+    throw new Error(
+      "Order not found, user mismatch, or status is not arrived."
+    );
+  }
+
+  return rows[0];
 }
