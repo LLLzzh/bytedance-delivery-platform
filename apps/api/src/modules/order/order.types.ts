@@ -38,8 +38,9 @@ export interface Order {
   // **对应 PostGIS GEOGRAPHY(Point, 4326) 字段**
   currentPosition?: Coordinates;
 
-  // **对应 PostGIS JSONB 字段** (或单独的 GEOGRAPHY(LineString))
-  routePath?: RoutePath;
+  routePath?: Coordinates[]; // 完整规划路径
+  traveledPath?: Coordinates[]; // 已走过的路径点（从起点到当前位置）
+  ruleId?: number;
 
   // === 异常监控 ===
   isAbnormal: boolean;
@@ -105,6 +106,7 @@ export interface OrderRow {
   last_update_time?: Date | null;
   route_path?: RoutePath;
   is_abnormal: boolean;
+  route_path_geojson?: string | null;
 
   // 自定义的 GeoJSON 转换字段 (用于 mapRowToOrder 解析坐标)
   recipient_coords_geojson: string;

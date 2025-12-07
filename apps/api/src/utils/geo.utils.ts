@@ -66,3 +66,22 @@ export function createGeographyExpression(
 
   throw new Error(`Unsupported shape type: ${shapeType}`);
 }
+
+/**
+ * 将 RoutePath (Coordinates[]) 转换为 PostGIS 的 LINESTRING WKT 表达式。
+ * @param routePath 坐标数组
+ * @returns WKT 字符串
+ */
+export function routePathToLineStringWKT(routePath: Coordinates[]): string {
+  const pathWKT = routePath.map((c) => `${c[0]} ${c[1]}`).join(",");
+  return `LINESTRING(${pathWKT})`;
+}
+
+/**
+ * 将 WKT 表达式转换为 PostGIS GeomFromText 调用
+ * @param wkt WKT 字符串
+ * @returns SQL 片段
+ */
+export function wrapWKTToGeomFromText(wkt: string): string {
+  return `ST_GeomFromText('${wkt}', ${SRID})::geography`;
+}
