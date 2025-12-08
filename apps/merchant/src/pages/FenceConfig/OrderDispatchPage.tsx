@@ -12,6 +12,17 @@ import {
   Tag,
   Tooltip,
   Space,
+  message,
+  TableProps,
+} from 'antd';
+import { SearchOutlined, PlusCircleOutlined, TruckOutlined } from '@ant-design/icons';
+import axios from 'axios';
+
+// 假设你有这个组件
+import DispatchConfirmModal from './DispatchConfirmModal';
+
+// =============== 类型定义 ===============
+type StatusType = 'pending' | 'shipping' | 'completed';
 } from "antd";
 import { SearchOutlined, TruckOutlined } from "@ant-design/icons";
 
@@ -33,12 +44,41 @@ interface OrderItem {
   endLngLat?: [number, number];
 }
 
+interface QueryParams {
+  page: number;
+  pageSize: number;
+  userId?: string;
+  merchantId?: string;
+  status?: string;
+  searchQuery?: string;
+  startTime?: string;
+  endTime?: string;
+  sortBy?: string;
+  sortDirection?: 'ASC' | 'DESC';
+}
+
+// =============== 常量 ===============
 const statusMap: Record<StatusType, { label: string; color: string }> = {
   pending: { label: "待发货", color: "orange" },
   shipping: { label: "运输中", color: "blue" },
   completed: { label: "已完成", color: "green" },
 };
 
+const mapBackendStatus = (status: string): StatusType => {
+  if (status === 'pending') return 'pending';
+  if (status === 'shipping') return 'shipping';
+  return 'completed';
+};
+
+const formatTime = (isoStr: string): string => {
+  return new Date(isoStr).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 // 模拟中转站数据
 const TRANSIT_HUBS = [
   {
@@ -177,43 +217,125 @@ const isDateInRange = (
   return target >= start && target <= end;
 };
 
+// =============== 主组件 ===============
 const OrderDispatchPage: React.FC = () => {
   const [form] = Form.useForm();
   const [visible, setVisible] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<OrderItem | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<StatusType | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
-  // 发货逻辑
-  const handleDispatchClick = (record: OrderItem) => {
-    setCurrentOrder(record);
-    setVisible(true);
+  // =============== 构建查询参数 ===============
+  const buildQueryParams = (
+    values: any,
+    page: number,
+    pageSize: number
+  ): QueryParams => {
+    const params: QueryParams = {
+      page,
+      pageSize,
+      userId: 'user_12345',
+      merchantId: '10001',
+    };
+
+    if (values.status) {
+      params.status = values.status;
+    }
+    if (values.orderNo?.trim()) {
+      params.searchQuery = values.orderNo.trim();
+    }
+
+    // 处理日期范围：DatePicker 返回的是 moment 对象数组（或 null）
+    const [start, end] = values.dateRange || [];
+    if (start && start.isValid) {
+      params.startTime = start.format('YYYY-MM-DD');
+    }
+    if (end && end.isValid) {
+      params.endTime = end.format('YYYY-MM-DD');
+    }
+
+    params.sortBy = 'createTime';
+    params.sortDirection = 'DESC';
+
+    return params;
   };
 
-  const handleConfirmDispatch = () => {
-    alert(`✅ 已成功发货订单：${currentOrder?.orderNo}`);
-    setVisible(false);
-    setCurrentOrder(null);
+  // =============== 请求订单 ===============
+  const fetchOrders = async (params: QueryParams) => {
+    setLoading(true);
+    try {
+      const response = await axios.get('/api/v1/orders', { params });
+      if (response.data.success) {
+        const orders: OrderItem[] = response.data.orders.map((item: any) => ({
+          key: item.id,
+          orderNo: item.id,
+          receiver: item.recipientName,
+          address: item.recipientAddress,
+          amount: parseFloat(item.amount) || 0,
+          status: mapBackendStatus(item.status),
+          createTime: formatTime(item.createTime),
+        }));
+        setOrders(orders);
+        setTotal(response.data.totalCount ?? response.data.orders.length);
+      } else {
+        message.error('获取订单失败');
+      }
+    } catch (error) {
+      console.error('API Error:', error);
+      message.error('网络错误，请检查控制台');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleCancel = () => {
-    setVisible(false);
-  };
+  // =============== 初始加载 ===============
+  useEffect(() => {
+    fetchOrders(buildQueryParams({}, 1, 10));
+  }, []);
 
+  // =============== 表单提交 ===============
+  const onFinish = (values: any) => {
+    setPagination({ current: 1, pageSize: 10 });
+    const params = buildQueryParams(values, 1, 10);
+    fetchOrders(params);
   // 表单提交
   const onFinish = () => {
     // 过滤由 useMemo 自动处理
   };
 
-  // 重置：清空表单 + 清除状态筛选
   const handleReset = () => {
     form.resetFields();
-    setSelectedStatus(null);
+    setPagination({ current: 1, pageSize: 10 });
+    fetchOrders(buildQueryParams({}, 1, 10));
   };
 
-  // ✅ 联动过滤逻辑（使用方法二：提前转换日期）
-  const filteredOrders = useMemo(() => {
+  // =============== 表格变化（分页 + 排序） ===============
+  const handleTableChange: TableProps<OrderItem>['onChange'] = (
+    paginationConfig,
+    filters,
+    sorter
+  ) => {
+    const page = paginationConfig.current || 1;
+    const pageSize = paginationConfig.pageSize || 10;
+    setPagination({ current: page, pageSize });
+
     const values = form.getFieldsValue();
 
+    let sortBy: string | undefined;
+    let sortDirection: 'ASC' | 'DESC' | undefined;
+
+    // 🔧 安全处理 sorter：可能是单个对象或数组
+    const sortArray = Array.isArray(sorter) ? sorter : [sorter];
+    const primarySort = sortArray.find(s => s && s.order);
+
+    if (primarySort?.columnKey) {
+      sortBy = String(primarySort.columnKey);
+      sortDirection = primarySort.order === 'ascend' ? 'ASC' : 'DESC';
+    } else if (primarySort?.field) {
+      sortBy = String(primarySort.field);
+      sortDirection = primarySort.order === 'ascend' ? 'ASC' : 'DESC';
     // 提取并清理表单值
     const orderNo = values.orderNo?.trim() || "";
     const formStatus = values.status || "";
@@ -231,30 +353,51 @@ const OrderDispatchPage: React.FC = () => {
       ];
     }
 
-    return orderData.filter((item) => {
-      // 1. 卡片状态筛选
-      if (selectedStatus && item.status !== selectedStatus) return false;
+    const params = buildQueryParams(values, page, pageSize);
+    if (sortBy) {
+      params.sortBy = sortBy;
+      params.sortDirection = sortDirection;
+    }
 
-      // 2. 表单：订单号
-      if (orderNo && !item.orderNo.includes(orderNo)) return false;
+    fetchOrders(params);
+  };
 
-      // 3. 表单：状态（兼容性，通常被卡片覆盖）
-      if (formStatus && item.status !== formStatus) return false;
+  // =============== 发货操作 ===============
+  const handleDispatchClick = (record: OrderItem) => {
+    setCurrentOrder(record);
+    setVisible(true);
+  };
 
-      // 4. 表单：创建时间（✅ 安全传入 [string, string]）
-      if (!isDateInRange(item.createTime, dateRange)) return false;
+  const handleConfirmDispatch = () => {
+    if (currentOrder) {
+      message.success(`✅ 已成功发货订单：${currentOrder.orderNo}`);
+    }
+    setVisible(false);
+    setCurrentOrder(null);
 
-      // 5. 表单：金额范围
-      if (minAmount !== null && item.amount < minAmount) return false;
-      if (maxAmount !== null && item.amount > maxAmount) return false;
+    const values = form.getFieldsValue();
+    fetchOrders(buildQueryParams(values, pagination.current, pagination.pageSize));
+  };
 
-      return true;
-    });
-  }, [selectedStatus, form]); // form 实例稳定，但 getFieldsValue 实时读取
+  const handleCancel = () => {
+    setVisible(false);
+  };
 
-  // 表格列配置
+  // =============== 统计卡片 ===============
+  const dynamicStats = [
+    { label: '待发货订单', value: '—', color: '#e6f7ff', textColor: '#1890ff' },
+    { label: '运输中', value: '—', color: '#fffbe6', textColor: '#faad14' },
+    { label: '已完成', value: '—', color: '#f0f9ff', textColor: '#52c41a' },
+    { label: '总交易额 (GMV)', value: '¥—', color: '#f5f5f5', textColor: '#000' },
+  ];
+
+  // =============== 表格列 ===============
   const columns = [
     {
+      title: '订单号',
+      dataIndex: 'orderNo',
+      key: 'orderNo',
+      ellipsis: true,
       title: "订单号",
       dataIndex: "orderNo",
       key: "orderNo",
@@ -271,6 +414,9 @@ const OrderDispatchPage: React.FC = () => {
       key: "receiver",
     },
     {
+      title: '收货地址',
+      dataIndex: 'address',
+      key: 'address',
       title: "收货地址 (悬浮查看完整)",
       dataIndex: "address",
       key: "address",
@@ -285,6 +431,8 @@ const OrderDispatchPage: React.FC = () => {
       dataIndex: "amount",
       key: "amount",
       render: (value: number) => `¥${value.toFixed(2)}`,
+      sorter: true,
+      columnKey: 'amount', // 用于排序识别
     },
     {
       title: "状态",
@@ -315,19 +463,20 @@ const OrderDispatchPage: React.FC = () => {
     },
   ];
 
+  // =============== 渲染 ===============
   return (
     <div style={{ padding: 24 }}>
       {/* 统计卡片 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        {stats.map((item, index) => (
+        {dynamicStats.map((item, index) => (
           <Col key={index} span={6}>
             <Card
-              hoverable
               bodyStyle={{ padding: 16 }}
               style={{
                 backgroundColor: item.color,
                 border: "none",
                 borderRadius: 8,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 cursor: item.status ? "pointer" : "default",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                 transform:
@@ -343,6 +492,7 @@ const OrderDispatchPage: React.FC = () => {
               <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
                 {item.label}
               </div>
+              <div style={{ fontSize: 24, fontWeight: 'bold', color: item.textColor }}>
               <div
                 style={{
                   fontSize: 24,
@@ -362,8 +512,8 @@ const OrderDispatchPage: React.FC = () => {
         <Form form={form} layout="vertical" colon={false} onFinish={onFinish}>
           <Row gutter={16}>
             <Col span={6}>
-              <Form.Item label="订单号" name="orderNo">
-                <Input placeholder="输入订单号" />
+              <Form.Item label="关键词（订单/收件人/地址）" name="orderNo">
+                <Input placeholder="输入关键词" />
               </Form.Item>
             </Col>
             <Col span={6}>
@@ -372,7 +522,7 @@ const OrderDispatchPage: React.FC = () => {
                   <Select.Option value="">全部</Select.Option>
                   <Select.Option value="pending">待发货</Select.Option>
                   <Select.Option value="shipping">运输中</Select.Option>
-                  <Select.Option value="completed">已完成</Select.Option>
+                  <Select.Option value="delivered">已完成</Select.Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -382,18 +532,6 @@ const OrderDispatchPage: React.FC = () => {
                   style={{ width: "100%" }}
                   placeholder={["开始日期", "结束日期"]}
                 />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item label="最小金额" name="minAmount">
-                <Input prefix="¥" placeholder="0" type="number" />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item label="最大金额" name="maxAmount">
-                <Input prefix="¥" placeholder="10000" type="number" />
               </Form.Item>
             </Col>
           </Row>
@@ -415,14 +553,22 @@ const OrderDispatchPage: React.FC = () => {
       {/* 订单表格 */}
       <Card title="订单列表">
         <Table
-          dataSource={filteredOrders}
+          dataSource={orders}
           columns={columns}
           rowKey="key"
-          pagination={{ pageSize: 10 }}
+          loading={loading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50'],
+          }}
+          onChange={handleTableChange}
         />
       </Card>
 
-      {/* 发货确认弹窗 */}
+      {/* 发货弹窗 */}
       {currentOrder && (
         <DispatchConfirmModal
           open={visible}
