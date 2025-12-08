@@ -128,7 +128,7 @@ chore: 构建/工具链相关
 
 ## 环境变量
 
-后端 API 需要配置以下环境变量（创建 `apps/api/.env`）：
+### API 服务 (`apps/api/.env`)
 
 ```env
 PORT=3000
@@ -138,7 +138,68 @@ DB_PORT=5432
 DB_NAME=mydb
 DB_USER=postgres
 DB_PASSWORD=postgres
+WORKER_URL=http://localhost:3001
 ```
+
+### Worker 服务 (`apps/worker/.env`)
+
+```env
+WORKER_PORT=3001
+NODE_ENV=development
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=mydb
+DB_USER=postgres
+DB_PASSWORD=postgres
+POSITION_UPDATE_INTERVAL=1000
+ANOMALY_CHECK_INTERVAL=30000
+ARRIVAL_THRESHOLD=100
+```
+
+### Mock Logistics 服务 (`apps/mock-logistics/.env`)
+
+```env
+NODE_ENV=development
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=mydb
+DB_USER=postgres
+DB_PASSWORD=postgres
+WORKER_URL=http://localhost:3001
+POSITION_UPDATE_INTERVAL=1000
+ORDER_RELOAD_INTERVAL=30000
+ARRIVAL_THRESHOLD=100
+```
+
+## 测试
+
+### 快速测试
+
+运行完整流程自动化测试：
+
+```bash
+# 确保所有服务都在运行
+# 1. API 服务: cd apps/api && pnpm dev
+# 2. Worker 服务: cd apps/worker && pnpm dev
+# 3. Mock Logistics 服务: cd apps/mock-logistics && pnpm dev
+
+# 运行测试脚本
+./scripts/test-delivery-flow.sh
+```
+
+### WebSocket 测试
+
+```bash
+# 安装依赖（如果需要）
+pnpm add -w -D ws
+
+# 运行 WebSocket 测试（需要订单 ID）
+node scripts/test-websocket.js <ORDER_ID>
+```
+
+### 详细测试指南
+
+查看 `docs/TESTING_GUIDE.md` 获取完整的测试说明。
 
 ## 许可证
 

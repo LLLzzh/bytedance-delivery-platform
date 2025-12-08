@@ -1,5 +1,5 @@
 {
-  "name": "api",
+  "name": "mock-logistics",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,20 +10,15 @@
     "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
-    "@fastify/cors": "^9.0.1",
-    "@fastify/helmet": "^11.1.1",
-    "@fastify/websocket": "^11.2.0",
     "dotenv": "^16.4.5",
-    "fastify": "^4.26.2",
     "pg": "^8.11.5",
-    "zod": "^3.23.8"
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^20.14.10",
     "@types/pg": "^8.11.0",
-    "@types/ws": "^8.18.1",
     "tsx": "^4.16.2",
     "typescript": "^5.5.4"
   }

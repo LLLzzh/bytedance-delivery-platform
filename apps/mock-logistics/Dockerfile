@@ -9,13 +9,13 @@ RUN npm install -g pnpm@8.15.6
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages ./packages
-COPY apps/api ./apps/api
+COPY apps/mock-logistics ./apps/mock-logistics
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Build the application
-WORKDIR /app/apps/api
+WORKDIR /app/apps/mock-logistics
 RUN pnpm build
 
 # Production stage
@@ -29,15 +29,13 @@ RUN npm install -g pnpm@8.15.6
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages ./packages
-COPY apps/api/package.json ./apps/api/
-COPY apps/api/dist ./apps/api/dist
+COPY apps/mock-logistics/package.json ./apps/mock-logistics/
+COPY apps/mock-logistics/dist ./apps/mock-logistics/dist
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod --recursive
 
-WORKDIR /app/apps/api
-
-EXPOSE 3000
+WORKDIR /app/apps/mock-logistics
 
 CMD ["node", "dist/index.js"]
 

@@ -4,11 +4,14 @@ import { Modal, List, Tag, Button, Typography, Spin, message } from "antd";
 import AMapLoader from "@amap/amap-jsapi-loader";
 
 interface RouteSelectorProps {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: (route: any) => void;
+  open?: boolean;
+  onClose?: () => void;
+  onConfirm?: (route: any) => void;
   startLngLat: [number, number]; // [lng, lat]
   endLngLat: [number, number]; // [lng, lat]
+  waypoints?: [number, number][]; // 途经点
+  mode?: "modal" | "inline";
+  extraTime?: number; // 额外的耗时（秒），例如中转站停留时间
 }
 
 export default function RouteSelector({
@@ -17,6 +20,9 @@ export default function RouteSelector({
   onConfirm,
   startLngLat,
   endLngLat,
+  waypoints = [],
+  mode = "modal",
+  extraTime = 0,
 }: RouteSelectorProps) {
   const mapRef = useRef<any>(null);
   const [loading, setLoading] = useState(false);
@@ -26,7 +32,7 @@ export default function RouteSelector({
 
   // 初始化地图
   useEffect(() => {
-    if (!open) return;
+    if (mode === "modal" && !open) return;
 
     // 设置安全密钥
     (window as any)._AMapSecurityConfig = {
@@ -58,9 +64,9 @@ export default function RouteSelector({
       // Modal 关闭时不销毁地图实例，避免重复创建开销，或者可以在 onClose 中手动销毁
       // 这里为了简单，每次 open 重新规划，但地图实例复用
     };
-  }, [open, startLngLat, endLngLat]);
+  }, [open, startLngLat, endLngLat, waypoints]);
 
-  const planRoutes = (AMap: any) => {
+  const planRoutes = async (AMap: any) => {
     if (!mapRef.current) return;
     setLoading(true);
 
@@ -80,24 +86,85 @@ export default function RouteSelector({
       map: mapRef.current,
     });
 
-    const driving = new AMap.Driving({
-      policy: AMap.DrivingPolicy.LEAST_TIME, // 默认策略：最快
-      map: null, // 我们自己绘制，不使用默认绘制
-    });
+    // 绘制途经点 Marker
+    if (waypoints && waypoints.length > 0) {
+      waypoints.forEach((point, index) => {
+        new AMap.Marker({
+          position: point,
+          content: `<div style="background-color: #1890ff; color: #fff; border-radius: 50%; width: 20px; height: 20px; text-align: center; line-height: 20px; font-size: 12px;">${index + 1}</div>`,
+          map: mapRef.current,
+          offset: new AMap.Pixel(-10, -10),
+        });
+      });
+    }
 
-    // 搜索路径
-    driving.search(startLngLat, endLngLat, (status: string, result: any) => {
-      setLoading(false);
-      if (status === "complete") {
-        if (result.routes && result.routes.length) {
-          setRoutes(result.routes);
-          setSelectedIndex(0); // 默认选中第一条
-          drawRoutes(AMap, result.routes, 0);
+    // 定义多种策略以获取多条路线
+    // 0: LEAST_TIME (最快), 2: LEAST_DISTANCE (最短), 1: LEAST_FEE (避开高速/省钱)
+    const policies = [
+      { code: 0, label: "推荐方案" },
+      { code: 2, label: "最短距离" },
+      { code: 1, label: "经济路线" },
+    ];
+
+    const fetchRoute = (policy: number) => {
+      return new Promise<any>((resolve) => {
+        const driving = new AMap.Driving({
+          policy: policy,
+          map: null,
+        });
+        driving.search(
+          startLngLat,
+          endLngLat,
+          { waypoints: waypoints },
+          (status: string, result: any) => {
+            if (
+              status === "complete" &&
+              result.routes &&
+              result.routes.length
+            ) {
+              resolve(result.routes[0]); // 取该策略下的第一条
+            } else {
+              resolve(null);
+            }
+          }
+        );
+      });
+    };
+
+    try {
+      // 并行请求不同策略的路线
+      const results = await Promise.all(
+        policies.map((p) => fetchRoute(p.code))
+      );
+
+      // 过滤无效结果并去重
+      const uniqueRoutes: any[] = [];
+      const seenKeys = new Set<string>();
+
+      results.forEach((route) => {
+        if (route) {
+          // 简单的去重键：距离+时间
+          const key = `${route.distance}-${route.time}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueRoutes.push(route);
+          }
         }
+      });
+
+      if (uniqueRoutes.length > 0) {
+        setRoutes(uniqueRoutes);
+        setSelectedIndex(0);
+        drawRoutes(AMap, uniqueRoutes, 0);
       } else {
-        message.error("路径规划失败: " + result);
+        message.warning("未找到合适路径");
       }
-    });
+    } catch (error) {
+      console.error("Route planning error:", error);
+      message.error("路径规划出错");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const drawRoutes = (AMap: any, allRoutes: any[], activeIndex: number) => {
@@ -155,13 +222,133 @@ export default function RouteSelector({
   };
 
   const formatTime = (seconds: number) => {
-    const min = Math.ceil(seconds / 60);
-    return min > 60 ? `${Math.floor(min / 60)}小时${min % 60}分` : `${min}分钟`;
+    const totalSeconds = seconds + extraTime;
+    const min = Math.ceil(totalSeconds / 60);
+    const hours = Math.floor(min / 60);
+    const mins = min % 60;
+
+    let timeStr = "";
+    if (hours > 0) {
+      timeStr += `${hours}小时`;
+    }
+    if (mins > 0 || hours === 0) {
+      timeStr += `${mins}分`;
+    }
+
+    // 如果有额外时间，显示详情
+    if (extraTime > 0) {
+      const extraHours = (extraTime / 3600).toFixed(1);
+      return (
+        <span>
+          {timeStr}{" "}
+          <span style={{ fontSize: 12, color: "#999" }}>
+            (含中转{extraHours}h)
+          </span>
+        </span>
+      );
+    }
+
+    return timeStr;
   };
 
   const formatDistance = (meters: number) => {
     return meters > 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m`;
   };
+
+  const content = (
+    <div
+      style={{
+        display: "flex",
+        height: mode === "inline" ? "300px" : "500px",
+        gap: "16px",
+      }}
+    >
+      {/* 左侧地图 */}
+      <div
+        style={{
+          flex: 1,
+          position: "relative",
+          borderRadius: "8px",
+          overflow: "hidden",
+          border: "1px solid #f0f0f0",
+        }}
+      >
+        {loading && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(255,255,255,0.7)",
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Spin tip="路径规划中..." />
+          </div>
+        )}
+        <div
+          id="route-map-container"
+          style={{ width: "100%", height: "100%" }}
+        />
+      </div>
+
+      {/* 右侧列表 */}
+      <div style={{ width: "300px", overflowY: "auto" }}>
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          备选方案 ({routes.length})
+        </Typography.Title>
+        <List
+          dataSource={routes}
+          renderItem={(item, index) => (
+            <List.Item
+              onClick={() => handleSelectRoute(index)}
+              style={{
+                cursor: "pointer",
+                background: selectedIndex === index ? "#e6f7ff" : "transparent",
+                border:
+                  selectedIndex === index
+                    ? "1px solid #1890ff"
+                    : "1px solid #f0f0f0",
+                borderRadius: "6px",
+                marginBottom: "8px",
+                padding: "12px",
+                transition: "all 0.3s",
+              }}
+            >
+              <div style={{ width: "100%" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <span style={{ fontWeight: "bold" }}>方案 {index + 1}</span>
+                  {index === 0 && <Tag color="green">推荐</Tag>}
+                </div>
+                <div style={{ color: "#666", fontSize: "13px" }}>
+                  <div>
+                    预计耗时：
+                    <span style={{ color: "#faad14", fontWeight: "bold" }}>
+                      {formatTime(item.time)}
+                    </span>
+                  </div>
+                  <div>路程距离：{formatDistance(item.distance)}</div>
+                  <div>红绿灯数：{item.traffic_lights || 0} 个</div>
+                </div>
+              </div>
+            </List.Item>
+          )}
+        />
+      </div>
+    </div>
+  );
+
+  if (mode === "inline") {
+    return content;
+  }
 
   return (
     <Modal
@@ -176,95 +363,13 @@ export default function RouteSelector({
         <Button
           key="confirm"
           type="primary"
-          onClick={() => onConfirm(routes[selectedIndex])}
+          onClick={() => onConfirm && onConfirm(routes[selectedIndex])}
         >
           确认使用方案 {selectedIndex + 1}
         </Button>,
       ]}
     >
-      <div style={{ display: "flex", height: "500px", gap: "16px" }}>
-        {/* 左侧地图 */}
-        <div
-          style={{
-            flex: 1,
-            position: "relative",
-            borderRadius: "8px",
-            overflow: "hidden",
-            border: "1px solid #f0f0f0",
-          }}
-        >
-          {loading && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background: "rgba(255,255,255,0.7)",
-                zIndex: 100,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Spin tip="路径规划中..." />
-            </div>
-          )}
-          <div
-            id="route-map-container"
-            style={{ width: "100%", height: "100%" }}
-          />
-        </div>
-
-        {/* 右侧列表 */}
-        <div style={{ width: "300px", overflowY: "auto" }}>
-          <Typography.Title level={5} style={{ marginTop: 0 }}>
-            备选方案 ({routes.length})
-          </Typography.Title>
-          <List
-            dataSource={routes}
-            renderItem={(item, index) => (
-              <List.Item
-                onClick={() => handleSelectRoute(index)}
-                style={{
-                  cursor: "pointer",
-                  background:
-                    selectedIndex === index ? "#e6f7ff" : "transparent",
-                  border:
-                    selectedIndex === index
-                      ? "1px solid #1890ff"
-                      : "1px solid #f0f0f0",
-                  borderRadius: "6px",
-                  marginBottom: "8px",
-                  padding: "12px",
-                  transition: "all 0.3s",
-                }}
-              >
-                <div style={{ width: "100%" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "4px",
-                    }}
-                  >
-                    <span style={{ fontWeight: "bold" }}>方案 {index + 1}</span>
-                    {index === 0 && <Tag color="green">推荐</Tag>}
-                  </div>
-                  <div style={{ color: "#666", fontSize: "13px" }}>
-                    <div>
-                      预计耗时：
-                      <span style={{ color: "#faad14", fontWeight: "bold" }}>
-                        {formatTime(item.time)}
-                      </span>
-                    </div>
-                    <div>路程距离：{formatDistance(item.distance)}</div>
-                    <div>红绿灯数：{item.traffic_lights || 0} 个</div>
-                  </div>
-                </div>
-              </List.Item>
-            )}
-          />
-        </div>
-      </div>
+      {content}
     </Modal>
   );
 }

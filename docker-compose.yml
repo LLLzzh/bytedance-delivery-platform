@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: kartoza/postgis:latest
     container_name: my-turborepo-postgres
     environment:
       POSTGRES_USER: postgres

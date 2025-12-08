@@ -9,13 +9,13 @@ RUN npm install -g pnpm@8.15.6
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages ./packages
-COPY apps/api ./apps/api
+COPY apps/worker ./apps/worker
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Build the application
-WORKDIR /app/apps/api
+WORKDIR /app/apps/worker
 RUN pnpm build
 
 # Production stage
@@ -29,15 +29,15 @@ RUN npm install -g pnpm@8.15.6
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages ./packages
-COPY apps/api/package.json ./apps/api/
-COPY apps/api/dist ./apps/api/dist
+COPY apps/worker/package.json ./apps/worker/
+COPY apps/worker/dist ./apps/worker/dist
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod --recursive
 
-WORKDIR /app/apps/api
+WORKDIR /app/apps/worker
 
-EXPOSE 3000
+EXPOSE 3001
 
 CMD ["node", "dist/index.js"]
 
