@@ -124,6 +124,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.1.0
         version: 6.1.0(react-dom@18.3.1)(react@18.3.1)
+      '@repo/http-client':
+        specifier: workspace:*
+        version: link:../../packages/http-client
       '@repo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -204,6 +207,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.1.0
         version: 6.1.0(react-dom@18.3.1)(react@18.3.1)
+      '@repo/http-client':
+        specifier: workspace:*
+        version: link:../../packages/http-client
       '@repo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -212,7 +218,7 @@ importers:
         version: 6.0.0(react-dom@18.3.1)(react@18.3.1)
       antd-mobile:
         specifier: ^5.41.1
-        version: 5.41.1(react-dom@18.3.1)(react@18.3.1)
+        version: 5.42.0(react-dom@18.3.1)(react@18.3.1)
       axios:
         specifier: ^1.13.2
         version: 1.13.2
@@ -299,6 +305,25 @@ importers:
       eslint-config-prettier:
         specifier: ^9.1.0
         version: 9.1.0(eslint@8.57.1)
+
+  packages/http-client:
+    dependencies:
+      axios:
+        specifier: ^1.13.2
+        version: 1.13.2
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      eslint:
+        specifier: ^8.57.0
+        version: 8.57.1
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
 
   packages/typescript-config: {}
 
@@ -2489,8 +2514,8 @@ packages:
     resolution: {integrity: sha512-YGsiEDCPUDz3SzfXi6gLZn/HpeSMW+jgPc4qiYUr1fSopg3hkUie2TnooJdExgfiETHefH3Ggs58He0OVfegLA==}
     dev: false
 
-  /antd-mobile@5.41.1(react-dom@18.3.1)(react@18.3.1):
-    resolution: {integrity: sha512-fS5sTRLKHca5qryEYLGiPDLANK0rbhx8f8xk0Olu6ef00tLe0P9iqHQm0U3UtEBd8S454cilw5uv2J3I79Tbgg==}
+  /antd-mobile@5.42.0(react-dom@18.3.1)(react@18.3.1):
+    resolution: {integrity: sha512-6k3q5BkNAQgwA+m8GTW45l6zd+G12ooa8wgzoQEu2+4cH0z5LmvbNAwKQvj3ciFULg85q9EACv+LArcWlyycRg==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0

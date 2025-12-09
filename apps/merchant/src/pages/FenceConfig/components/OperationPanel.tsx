@@ -1,5 +1,6 @@
 import { Button, Form, Input, Select, Space, Typography } from "antd";
-import { FenceData, ruleOptions } from "./types";
+import { FenceData } from "../types";
+import { ruleOptions } from "../constants";
 import { useEffect } from "react";
 
 interface OperationPanelProps {
@@ -49,7 +50,16 @@ export default function OperationPanel({
         form={form}
         layout="vertical"
         onFinish={(values) => {
-          onSave({ ...data, ...values } as FenceData);
+          // 注意：这里不直接传递坐标，让 handleSave 从地图覆盖物获取最新坐标
+          // 因为用户可能在地图上编辑了围栏，但 data 中的坐标可能还没有更新
+          onSave({
+            ...data,
+            ...values,
+            // 保留原有的坐标数据作为后备，但 handleSave 会优先使用覆盖物的最新数据
+            coordinates: data.coordinates || [],
+            shape_type: data.shape_type || "polygon",
+            radius: data.radius || 0,
+          } as FenceData);
         }}
       >
         <Form.Item

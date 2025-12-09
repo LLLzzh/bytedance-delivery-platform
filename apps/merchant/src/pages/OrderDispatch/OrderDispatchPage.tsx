@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   Row,
@@ -14,23 +15,20 @@ import {
   Space,
   message,
   TableProps,
-} from 'antd';
-import { SearchOutlined, PlusCircleOutlined, TruckOutlined } from '@ant-design/icons';
-import axios from 'axios';
-
-// 假设你有这个组件
-import DispatchConfirmModal from './DispatchConfirmModal';
-
-// =============== 类型定义 ===============
-type StatusType = 'pending' | 'shipping' | 'completed';
 } from "antd";
 import { SearchOutlined, TruckOutlined } from "@ant-design/icons";
+import {
+  orderService,
+  type Order,
+  type OrderStatus,
+} from "../../services/order";
+import { prepareShippingData } from "../../utils/shipping";
+
+// =============== 类型定义 ===============
+type StatusType = "pending" | "shipping" | "completed";
 
 // 导入发货确认弹窗
 import DispatchConfirmModal from "./DispatchConfirmModal";
-
-// 类型定义
-type StatusType = "pending" | "shipping" | "completed";
 
 interface OrderItem {
   key: string;
@@ -54,7 +52,13 @@ interface QueryParams {
   startTime?: string;
   endTime?: string;
   sortBy?: string;
-  sortDirection?: 'ASC' | 'DESC';
+  sortDirection?: "ASC" | "DESC";
+}
+
+interface FormValues {
+  orderNo?: string;
+  status?: string;
+  dateRange?: [unknown, unknown] | null;
 }
 
 // =============== 常量 ===============
@@ -64,21 +68,44 @@ const statusMap: Record<StatusType, { label: string; color: string }> = {
   completed: { label: "已完成", color: "green" },
 };
 
-const mapBackendStatus = (status: string): StatusType => {
-  if (status === 'pending') return 'pending';
-  if (status === 'shipping') return 'shipping';
-  return 'completed';
+// =============== 样式常量 ===============
+const styles = {
+  pageContainer: { padding: 24 },
+  statsRow: { marginBottom: 24 },
+  statCard: {
+    base: {
+      border: "none",
+      borderRadius: 8,
+      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+      transition: "transform 0.2s",
+    },
+    body: { padding: 16 },
+    label: { fontSize: 14, color: "#666", marginBottom: 8 },
+    value: { fontSize: 24, fontWeight: "bold" as const },
+  },
+  searchCard: { marginBottom: 24 },
+  formActions: { marginTop: 16 },
+  datePicker: { width: "100%" },
+} as const;
+
+const mapBackendStatus = (status: OrderStatus): StatusType => {
+  if (status === "pending") return "pending";
+  if (status === "shipping" || status === "pickedUp" || status === "arrived")
+    return "shipping";
+  if (status === "delivered") return "completed";
+  return "pending";
 };
 
 const formatTime = (isoStr: string): string => {
-  return new Date(isoStr).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+  return new Date(isoStr).toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   });
+};
 // 模拟中转站数据
 const TRANSIT_HUBS = [
   {
@@ -113,112 +140,9 @@ const TRANSIT_HUBS = [
   },
 ];
 
-// 模拟订单数据
-const orderData: OrderItem[] = [
-  {
-    key: "1",
-    orderNo: "ORD-001",
-    receiver: "王小明",
-    address: "浙江省杭州市西湖区文三路123号阿里巴巴西溪园区A座",
-    amount: 299.0,
-    status: "pending",
-    createTime: "2025-11-28 14:30",
-    startLngLat: [120.023164, 30.281008], // 杭州仓
-    endLngLat: [120.21201, 30.2084], // 滨江区
-  },
-  {
-    key: "2",
-    orderNo: "ORD-002",
-    receiver: "李雷",
-    address: "上海市浦东新区张江高科地铁站附近创业大厦B栋502室",
-    amount: 1200.0,
-    status: "shipping",
-    createTime: "2025-11-27 09:15",
-    startLngLat: [120.023164, 30.281008], // 杭州仓
-    endLngLat: [121.593477, 31.204327], // 张江
-  },
-  {
-    key: "3",
-    orderNo: "ORD-003",
-    receiver: "韩梅梅",
-    address: "北京市朝阳区望京SOHO中心T3座",
-    amount: 89.5,
-    status: "completed",
-    createTime: "2025-11-25 16:45",
-    startLngLat: [120.023164, 30.281008], // 杭州仓
-    endLngLat: [116.48105, 39.996794], // 望京SOHO
-  },
-  {
-    key: "4",
-    orderNo: "ORD-004",
-    receiver: "张伟",
-    address: "广东省深圳市南山区科技园",
-    amount: 450.0,
-    status: "pending",
-    createTime: "2025-11-28 10:20",
-    startLngLat: [120.023164, 30.281008], // 杭州仓
-    endLngLat: [113.953086, 22.540989], // 科技园
-  },
-  {
-    key: "5",
-    orderNo: "ORD-005",
-    receiver: "赵芳",
-    address: "江苏省南京市鼓楼区中山北路",
-    amount: 320.0,
-    status: "shipping",
-    createTime: "2025-11-26 15:00",
-    startLngLat: [120.023164, 30.281008], // 杭州仓
-    endLngLat: [118.767413, 32.061507], // 中山北路
-  },
-];
-
-// 统计卡片
-const stats = [
-  {
-    label: "待发货订单",
-    value: 2,
-    color: "#e6f7ff",
-    textColor: "#1890ff",
-    status: "pending" as StatusType,
-  },
-  {
-    label: "运输中",
-    value: 2,
-    color: "#fffbe6",
-    textColor: "#faad14",
-    status: "shipping" as StatusType,
-  },
-  {
-    label: "已完成",
-    value: 1,
-    color: "#f0f9ff",
-    textColor: "#52c41a",
-    status: "completed" as StatusType,
-  },
-  {
-    label: "总交易额 (GMV)",
-    value: "¥45,200",
-    color: "#f5f5f5",
-    textColor: "#000",
-    status: null,
-  },
-];
-
-// ✅ 日期范围判断函数（只接受 [string, string]）
-const isDateInRange = (
-  dateStr: string,
-  range: [string, string] | null
-): boolean => {
-  if (!range || !range[0] || !range[1]) return true;
-  const target = new Date(dateStr);
-  const start = new Date(range[0]);
-  const end = new Date(range[1]);
-  end.setHours(23, 59, 59, 999); // 包含整天
-  return target >= start && target <= end;
-};
-
 // =============== 主组件 ===============
-const OrderDispatchPage: React.FC = () => {
+function OrderDispatchPage() {
+  const navigate = useNavigate();
   const [form] = Form.useForm();
   const [visible, setVisible] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<OrderItem | null>(null);
@@ -226,18 +150,48 @@ const OrderDispatchPage: React.FC = () => {
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [total, setTotal] = useState(0);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const [selectedStatus, setSelectedStatus] = useState<StatusType | null>(null);
+  const [dynamicStats, setDynamicStats] = useState([
+    {
+      label: "待发货订单",
+      value: "—",
+      color: "#e6f7ff",
+      textColor: "#1890ff",
+      status: "pending" as StatusType,
+    },
+    {
+      label: "运输中",
+      value: "—",
+      color: "#fffbe6",
+      textColor: "#faad14",
+      status: "shipping" as StatusType,
+    },
+    {
+      label: "已完成",
+      value: "—",
+      color: "#f0f9ff",
+      textColor: "#52c41a",
+      status: "completed" as StatusType,
+    },
+    {
+      label: "总交易额 (GMV)",
+      value: "¥—",
+      color: "#f5f5f5",
+      textColor: "#000",
+      status: null,
+    },
+  ]);
 
   // =============== 构建查询参数 ===============
   const buildQueryParams = (
-    values: any,
+    values: FormValues,
     page: number,
     pageSize: number
   ): QueryParams => {
     const params: QueryParams = {
       page,
       pageSize,
-      userId: 'user_12345',
-      merchantId: '10001',
+      merchantId: "10001",
     };
 
     if (values.status) {
@@ -247,44 +201,108 @@ const OrderDispatchPage: React.FC = () => {
       params.searchQuery = values.orderNo.trim();
     }
 
-    // 处理日期范围：DatePicker 返回的是 moment 对象数组（或 null）
+    // 处理日期范围：DatePicker 返回的是 dayjs 对象数组（或 null）
     const [start, end] = values.dateRange || [];
-    if (start && start.isValid) {
-      params.startTime = start.format('YYYY-MM-DD');
+    if (start && typeof start === "object" && "isValid" in start) {
+      const startDayjs = start as unknown as {
+        isValid: () => boolean;
+        format: (format: string) => string;
+      };
+      if (startDayjs.isValid()) {
+        params.startTime = startDayjs.format("YYYY-MM-DD");
+      }
     }
-    if (end && end.isValid) {
-      params.endTime = end.format('YYYY-MM-DD');
+    if (end && typeof end === "object" && "isValid" in end) {
+      const endDayjs = end as unknown as {
+        isValid: () => boolean;
+        format: (format: string) => string;
+      };
+      if (endDayjs.isValid()) {
+        params.endTime = endDayjs.format("YYYY-MM-DD");
+      }
     }
 
-    params.sortBy = 'createTime';
-    params.sortDirection = 'DESC';
+    params.sortBy = "createTime";
+    params.sortDirection = "DESC";
 
     return params;
+  };
+
+  // =============== 获取统计数据 ===============
+  const fetchStatistics = async () => {
+    try {
+      const statistics = await orderService.getOrderStatistics();
+      setDynamicStats([
+        {
+          label: "待发货订单",
+          value: String(statistics.pendingCount),
+          color: "#e6f7ff",
+          textColor: "#1890ff",
+          status: "pending" as StatusType,
+        },
+        {
+          label: "运输中",
+          value: String(statistics.shippingCount),
+          color: "#fffbe6",
+          textColor: "#faad14",
+          status: "shipping" as StatusType,
+        },
+        {
+          label: "已完成",
+          value: String(statistics.completedCount),
+          color: "#f0f9ff",
+          textColor: "#52c41a",
+          status: "completed" as StatusType,
+        },
+        {
+          label: "总交易额 (GMV)",
+          value: `¥${statistics.totalGMV.toFixed(2)}`,
+          color: "#f5f5f5",
+          textColor: "#000",
+          status: null,
+        },
+      ]);
+    } catch (error) {
+      console.error("获取统计数据失败:", error);
+      // 统计数据获取失败不影响订单列表显示，只记录错误
+    }
   };
 
   // =============== 请求订单 ===============
   const fetchOrders = async (params: QueryParams) => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/v1/orders', { params });
-      if (response.data.success) {
-        const orders: OrderItem[] = response.data.orders.map((item: any) => ({
-          key: item.id,
-          orderNo: item.id,
-          receiver: item.recipientName,
-          address: item.recipientAddress,
-          amount: parseFloat(item.amount) || 0,
-          status: mapBackendStatus(item.status),
-          createTime: formatTime(item.createTime),
-        }));
-        setOrders(orders);
-        setTotal(response.data.totalCount ?? response.data.orders.length);
-      } else {
-        message.error('获取订单失败');
-      }
+      const result = await orderService.getOrders({
+        page: params.page,
+        pageSize: params.pageSize,
+        userId: params.userId,
+        status: params.status,
+        searchQuery: params.searchQuery,
+        sortBy: params.sortBy as
+          | "createTime"
+          | "amount"
+          | "status"
+          | "recipientName",
+        sortDirection: params.sortDirection,
+      });
+
+      const orders: OrderItem[] = result.orders.map((order: Order) => ({
+        key: order.id,
+        orderNo: order.id,
+        receiver: order.recipientName,
+        address: order.recipientAddress,
+        amount: order.amount,
+        status: mapBackendStatus(order.status),
+        createTime: formatTime(order.createTime),
+        startLngLat: order.routePath?.[0] as [number, number] | undefined,
+        endLngLat: order.recipientCoords as [number, number],
+      }));
+
+      setOrders(orders);
+      setTotal(result.totalCount);
     } catch (error) {
-      console.error('API Error:', error);
-      message.error('网络错误，请检查控制台');
+      console.error("API Error:", error);
+      message.error("获取订单列表失败");
     } finally {
       setLoading(false);
     }
@@ -292,18 +310,17 @@ const OrderDispatchPage: React.FC = () => {
 
   // =============== 初始加载 ===============
   useEffect(() => {
+    // 同时获取订单列表和统计数据
     fetchOrders(buildQueryParams({}, 1, 10));
+    fetchStatistics();
   }, []);
 
   // =============== 表单提交 ===============
-  const onFinish = (values: any) => {
+  function onFinish(values: FormValues) {
     setPagination({ current: 1, pageSize: 10 });
     const params = buildQueryParams(values, 1, 10);
     fetchOrders(params);
-  // 表单提交
-  const onFinish = () => {
-    // 过滤由 useMemo 自动处理
-  };
+  }
 
   const handleReset = () => {
     form.resetFields();
@@ -312,9 +329,9 @@ const OrderDispatchPage: React.FC = () => {
   };
 
   // =============== 表格变化（分页 + 排序） ===============
-  const handleTableChange: TableProps<OrderItem>['onChange'] = (
+  const handleTableChange: TableProps<OrderItem>["onChange"] = (
     paginationConfig,
-    filters,
+    _filters,
     sorter
   ) => {
     const page = paginationConfig.current || 1;
@@ -324,33 +341,18 @@ const OrderDispatchPage: React.FC = () => {
     const values = form.getFieldsValue();
 
     let sortBy: string | undefined;
-    let sortDirection: 'ASC' | 'DESC' | undefined;
+    let sortDirection: "ASC" | "DESC" | undefined;
 
     // 🔧 安全处理 sorter：可能是单个对象或数组
     const sortArray = Array.isArray(sorter) ? sorter : [sorter];
-    const primarySort = sortArray.find(s => s && s.order);
+    const primarySort = sortArray.find((s) => s && s.order);
 
     if (primarySort?.columnKey) {
       sortBy = String(primarySort.columnKey);
-      sortDirection = primarySort.order === 'ascend' ? 'ASC' : 'DESC';
+      sortDirection = primarySort.order === "ascend" ? "ASC" : "DESC";
     } else if (primarySort?.field) {
       sortBy = String(primarySort.field);
-      sortDirection = primarySort.order === 'ascend' ? 'ASC' : 'DESC';
-    // 提取并清理表单值
-    const orderNo = values.orderNo?.trim() || "";
-    const formStatus = values.status || "";
-    const minAmount =
-      values.minAmount !== undefined ? Number(values.minAmount) : null;
-    const maxAmount =
-      values.maxAmount !== undefined ? Number(values.maxAmount) : null;
-
-    // ✅ 安全转换日期范围：Dayjs[] → [string, string]
-    let dateRange: [string, string] | null = null;
-    if (values.dateRange && values.dateRange[0] && values.dateRange[1]) {
-      dateRange = [
-        values.dateRange[0].format("YYYY-MM-DD"),
-        values.dateRange[1].format("YYYY-MM-DD"),
-      ];
+      sortDirection = primarySort.order === "ascend" ? "ASC" : "DESC";
     }
 
     const params = buildQueryParams(values, page, pageSize);
@@ -368,39 +370,48 @@ const OrderDispatchPage: React.FC = () => {
     setVisible(true);
   };
 
-  const handleConfirmDispatch = () => {
-    if (currentOrder) {
-      message.success(`✅ 已成功发货订单：${currentOrder.orderNo}`);
-    }
-    setVisible(false);
-    setCurrentOrder(null);
+  const handleConfirmDispatch = async (
+    routePath: [number, number][],
+    ruleId: number
+  ) => {
+    if (!currentOrder) return;
 
-    const values = form.getFieldsValue();
-    fetchOrders(buildQueryParams(values, pagination.current, pagination.pageSize));
+    setLoading(true);
+    try {
+      const shippingData = prepareShippingData(routePath, ruleId);
+      await orderService.shipOrder(currentOrder.orderNo, shippingData);
+
+      message.success(`✅ 已成功发货订单：${currentOrder.orderNo}`);
+      setVisible(false);
+      setCurrentOrder(null);
+
+      const values = form.getFieldsValue();
+      // 刷新订单列表和统计数据
+      fetchOrders(
+        buildQueryParams(values, pagination.current, pagination.pageSize)
+      );
+      fetchStatistics();
+    } catch (error) {
+      console.error("发货失败:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "发货失败，请重试";
+      message.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancel = () => {
     setVisible(false);
   };
 
-  // =============== 统计卡片 ===============
-  const dynamicStats = [
-    { label: '待发货订单', value: '—', color: '#e6f7ff', textColor: '#1890ff' },
-    { label: '运输中', value: '—', color: '#fffbe6', textColor: '#faad14' },
-    { label: '已完成', value: '—', color: '#f0f9ff', textColor: '#52c41a' },
-    { label: '总交易额 (GMV)', value: '¥—', color: '#f5f5f5', textColor: '#000' },
-  ];
-
   // =============== 表格列 ===============
   const columns = [
     {
-      title: '订单号',
-      dataIndex: 'orderNo',
-      key: 'orderNo',
-      ellipsis: true,
       title: "订单号",
       dataIndex: "orderNo",
       key: "orderNo",
+      ellipsis: true,
     },
     {
       title: "订单创建时间",
@@ -414,9 +425,6 @@ const OrderDispatchPage: React.FC = () => {
       key: "receiver",
     },
     {
-      title: '收货地址',
-      dataIndex: 'address',
-      key: 'address',
       title: "收货地址 (悬浮查看完整)",
       dataIndex: "address",
       key: "address",
@@ -432,7 +440,7 @@ const OrderDispatchPage: React.FC = () => {
       key: "amount",
       render: (value: number) => `¥${value.toFixed(2)}`,
       sorter: true,
-      columnKey: 'amount', // 用于排序识别
+      columnKey: "amount", // 用于排序识别
     },
     {
       title: "状态",
@@ -447,7 +455,7 @@ const OrderDispatchPage: React.FC = () => {
       key: "action",
       render: (_: unknown, record: OrderItem) => (
         <Space size="middle">
-          <a href="#">详情</a>
+          <a onClick={() => navigate(`/OrderDetail/${record.orderNo}`)}>详情</a>
           {record.status === "pending" && (
             <Button
               type="primary"
@@ -465,23 +473,19 @@ const OrderDispatchPage: React.FC = () => {
 
   // =============== 渲染 ===============
   return (
-    <div style={{ padding: 24 }}>
+    <div style={styles.pageContainer}>
       {/* 统计卡片 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]} style={styles.statsRow}>
         {dynamicStats.map((item, index) => (
           <Col key={index} span={6}>
             <Card
-              bodyStyle={{ padding: 16 }}
+              styles={{ body: styles.statCard.body }}
               style={{
+                ...styles.statCard.base,
                 backgroundColor: item.color,
-                border: "none",
-                borderRadius: 8,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 cursor: item.status ? "pointer" : "default",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                 transform:
                   selectedStatus === item.status ? "scale(1.02)" : "none",
-                transition: "transform 0.2s",
               }}
               onClick={() => {
                 if (item.status) {
@@ -489,14 +493,10 @@ const OrderDispatchPage: React.FC = () => {
                 }
               }}
             >
-              <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-                {item.label}
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 'bold', color: item.textColor }}>
+              <div style={styles.statCard.label}>{item.label}</div>
               <div
                 style={{
-                  fontSize: 24,
-                  fontWeight: "bold",
+                  ...styles.statCard.value,
                   color: item.textColor,
                 }}
               >
@@ -508,7 +508,7 @@ const OrderDispatchPage: React.FC = () => {
       </Row>
 
       {/* 搜索表单 */}
-      <Card title="搜索订单" style={{ marginBottom: 24 }}>
+      <Card title="搜索订单" style={styles.searchCard}>
         <Form form={form} layout="vertical" colon={false} onFinish={onFinish}>
           <Row gutter={16}>
             <Col span={6}>
@@ -529,13 +529,13 @@ const OrderDispatchPage: React.FC = () => {
             <Col span={12}>
               <Form.Item label="创建时间" name="dateRange">
                 <DatePicker.RangePicker
-                  style={{ width: "100%" }}
+                  style={styles.datePicker}
                   placeholder={["开始日期", "结束日期"]}
                 />
               </Form.Item>
             </Col>
           </Row>
-          <Row justify="end" style={{ marginTop: 16 }}>
+          <Row justify="end" style={styles.formActions}>
             <Space>
               <Button onClick={handleReset}>重置</Button>
               <Button
@@ -562,7 +562,7 @@ const OrderDispatchPage: React.FC = () => {
             pageSize: pagination.pageSize,
             total,
             showSizeChanger: true,
-            pageSizeOptions: ['10', '20', '50'],
+            pageSizeOptions: ["10", "20", "50"],
           }}
           onChange={handleTableChange}
         />
@@ -577,15 +577,14 @@ const OrderDispatchPage: React.FC = () => {
           orderNo={currentOrder.orderNo}
           fromAddress="浙江省杭州市余杭区菜鸟物流园A区"
           toAddress={currentOrder.address}
-          distance="1240km"
-          duration="14小时"
           startLngLat={currentOrder.startLngLat || [116.397428, 39.90923]}
           endLngLat={currentOrder.endLngLat || [116.417428, 39.92923]}
           availableHubs={TRANSIT_HUBS}
+          defaultRuleId={101}
         />
       )}
     </div>
   );
-};
+}
 
 export default OrderDispatchPage;

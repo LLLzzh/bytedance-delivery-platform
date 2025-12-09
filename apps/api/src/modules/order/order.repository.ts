@@ -11,6 +11,7 @@ import {
   PaginatedOrderList,
   OrderRow,
   CountRow,
+  OrderStatistics,
 } from "./order.types.js";
 import {
   coordsToPointWKT,
@@ -558,4 +559,46 @@ export async function completeDelivery(
   }
 
   return rows[0];
+}
+
+// ----------------------------------------------------------------------
+// 订单统计查询
+// ----------------------------------------------------------------------
+
+/**
+ * 获取订单统计信息（待发货、运输中、已完成、总交易额）
+ * @param merchantId 商家ID
+ * @returns OrderStatistics
+ */
+export async function getOrderStatistics(
+  merchantId: string
+): Promise<OrderStatistics> {
+  const sql = `
+    SELECT 
+      COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+      COUNT(*) FILTER (WHERE status IN ('shipping', 'pickedUp', 'arrived')) AS shipping_count,
+      COUNT(*) FILTER (WHERE status = 'delivered') AS completed_count,
+      COALESCE(SUM(amount), 0) AS total_gmv
+    FROM orders
+    WHERE merchant_id = $1;
+  `;
+
+  const rows: Array<{
+    pending_count: string;
+    shipping_count: string;
+    completed_count: string;
+    total_gmv: string | number;
+  }> = await query(sql, [merchantId]);
+
+  const row = rows[0];
+
+  return {
+    pendingCount: parseInt(row.pending_count, 10),
+    shippingCount: parseInt(row.shipping_count, 10),
+    completedCount: parseInt(row.completed_count, 10),
+    totalGMV:
+      typeof row.total_gmv === "string"
+        ? parseFloat(row.total_gmv)
+        : row.total_gmv,
+  };
 }

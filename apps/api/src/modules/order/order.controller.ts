@@ -134,6 +134,20 @@ export async function orderController(fastify: FastifyInstance) {
     }
   });
 
+  // GET /api/v1/orders/statistics - 获取订单统计信息
+  fastify.get("/statistics", async (request, reply) => {
+    try {
+      const statistics = await OrderService.getOrderStatistics();
+      return {
+        success: true,
+        data: statistics,
+      };
+    } catch (error) {
+      console.error(error);
+      reply.code(500).send({ error: "Failed to fetch order statistics." });
+    }
+  });
+
   // P2.4: GET /api/v1/orders - 获取订单列表 (支持分页/筛选/搜索)
   fastify.get("/", async (request, reply) => {
     // 1. 从 Query String 中解析参数，并处理类型转换

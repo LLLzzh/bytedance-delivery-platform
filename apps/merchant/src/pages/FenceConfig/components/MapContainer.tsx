@@ -8,7 +8,8 @@ import {
 } from "react";
 import AMapLoader from "@amap/amap-jsapi-loader";
 import { message } from "antd";
-import { FenceData, ruleOptions } from "./types";
+import { FenceData } from "../types";
+import { ruleOptions } from "../constants";
 
 //接口样式说明：
 // 样式配置--编辑中
@@ -40,6 +41,9 @@ export interface MapContainerRef {
   cancelOperation: () => void;
   confirmOperation: (data?: FenceData) => void;
   startEdit: (fence: FenceData) => void;
+  getCurrentOverlayData: (
+    fenceId?: string | number
+  ) => Partial<FenceData> | null;
 }
 // 地图容器组件 Props
 interface MapContainerProps {
@@ -185,7 +189,7 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
           mouseToolRef.current.close();
         }
       },
-      confirmOperation: () => {
+      confirmOperation: (data?: FenceData) => {
         const targetOverlay = currentOverlayRef.current;
         if (targetOverlay) {
           // 1. 关闭编辑器
@@ -194,14 +198,61 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
             editorRef.current = null;
           }
 
-          // 2. 移除临时覆盖物及其 Label
-          // 我们完全依赖 useEffect 根据 existingFences 来重新绘制
-          // 所以这里直接把刚才画的这个临时的清理掉即可，避免与 useEffect 冲突
-          const extData = targetOverlay.getExtData();
-          if (extData && extData._label) {
-            extData._label.remove();
+          // 2. 检查是否是已保存的围栏（有 id 且在 overlaysRef 中）
+          const isSaved = overlaysRef.current.includes(targetOverlay);
+
+          if (isSaved && data) {
+            // 如果是已保存的围栏，直接更新覆盖物的数据和样式
+            // 这样不需要移除和重新创建，避免闪烁
+            const updatedExtData = { ...data };
+            targetOverlay.setExtData(updatedExtData);
+
+            // 更新覆盖物的形状
+            const isPolygon =
+              targetOverlay.CLASS_NAME === "AMap.Polygon" ||
+              (targetOverlay.getPath && !targetOverlay.getRadius);
+            const isCircle =
+              targetOverlay.CLASS_NAME === "AMap.Circle" ||
+              (targetOverlay.getRadius && targetOverlay.getCenter);
+
+            if (isPolygon && data.shape_type === "polygon") {
+              // 对于多边形，使用 setPath 更新路径
+              const AMap = amapRef.current;
+              if (AMap) {
+                const path = data.coordinates.map(
+                  (coord) => new AMap.LngLat(coord[0], coord[1])
+                );
+                targetOverlay.setPath(path);
+              }
+            } else if (isCircle && data.shape_type === "circle") {
+              // 对于圆形，更新圆心和半径
+              const AMap = amapRef.current;
+              if (AMap) {
+                const center = new AMap.LngLat(
+                  data.coordinates[0][0],
+                  data.coordinates[0][1]
+                );
+                targetOverlay.setCenter(center);
+                targetOverlay.setRadius(data.radius);
+              }
+            }
+
+            // 更新样式
+            targetOverlay.setOptions(getStyleByRuleId(data.rule_id));
+
+            // 更新标签（延迟一点确保覆盖物形状已更新）
+            setTimeout(() => {
+              updateOverlayLabel(targetOverlay, data);
+            }, 50);
+          } else {
+            // 如果是新建的临时覆盖物，移除它
+            // 依赖 useEffect 根据 existingFences 来重新绘制
+            const extData = targetOverlay.getExtData();
+            if (extData && extData._label) {
+              extData._label.remove();
+            }
+            mapRef.current?.remove(targetOverlay);
           }
-          mapRef.current?.remove(targetOverlay);
 
           currentOverlayRef.current = null;
         }
@@ -213,10 +264,12 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
           return ext && ext.id === fence.id;
         });
 
-        if (targetOverlay) {
-          // 复用 handleOverlayEdit 的前得部分逻辑，但不触发 onSelectFence
-          if (mouseToolRef.current && (mouseToolRef.current as any)._enabled)
-            return;
+        if (targetOverlay && mapRef.current) {
+          // 先关闭绘制工具，确保可以编辑
+          if (mouseToolRef.current) {
+            mouseToolRef.current.close();
+          }
+          mapRef.current.setDefaultCursor("default");
 
           // 如果已经在编辑其他的，先关闭之前的
           if (editorRef.current) {
@@ -237,15 +290,136 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
           currentOverlayRef.current = targetOverlay;
           targetOverlay.setOptions(STYLE_EDITING);
 
-          // 启动编辑
-          startEditor(targetOverlay);
+          // 地图跳转到围栏位置
+          try {
+            const isPolygon =
+              targetOverlay.CLASS_NAME === "AMap.Polygon" ||
+              (targetOverlay.getPath && !targetOverlay.getRadius);
+            const isCircle =
+              targetOverlay.CLASS_NAME === "AMap.Circle" ||
+              (targetOverlay.getRadius && targetOverlay.getCenter);
+
+            if (isPolygon) {
+              // 对于多边形，使用 getBounds() 获取边界并调整视图
+              const bounds = targetOverlay.getBounds();
+              if (bounds) {
+                mapRef.current.setBounds(bounds, false, [50, 50, 50, 50]);
+              }
+            } else if (isCircle) {
+              // 对于圆形，跳转到圆心并根据半径调整缩放
+              const center = targetOverlay.getCenter();
+              const radius = targetOverlay.getRadius();
+              if (center) {
+                // 根据半径计算合适的缩放级别（半径越大，缩放级别越小）
+                // 半径单位是米，转换为合适的缩放级别
+                let zoom = 15;
+                if (radius > 5000) zoom = 12;
+                else if (radius > 2000) zoom = 13;
+                else if (radius > 1000) zoom = 14;
+                else if (radius > 500) zoom = 15;
+                else if (radius > 200) zoom = 16;
+                else zoom = 17;
+
+                mapRef.current.setZoomAndCenter(zoom, center);
+              }
+            }
+          } catch (e) {
+            console.error("Error setting map view:", e);
+          }
+
+          // 启动编辑（延迟一点确保地图跳转完成）
+          setTimeout(() => {
+            startEditor(targetOverlay);
+          }, 100);
         }
+      },
+      getCurrentOverlayData: (fenceId?: string | number) => {
+        // 优先从 currentOverlayRef 获取（正在编辑的覆盖物）
+        let targetOverlay = currentOverlayRef.current;
+
+        // 如果 currentOverlayRef 为空，尝试从 overlaysRef 中根据 id 查找
+        if (!targetOverlay && fenceId) {
+          targetOverlay = overlaysRef.current.find((o) => {
+            const ext = o.getExtData();
+            return ext && ext.id === fenceId;
+          });
+          if (targetOverlay) {
+            console.log("Found overlay by id:", fenceId);
+          }
+        }
+
+        if (!targetOverlay) {
+          console.log(
+            "getCurrentOverlayData: no target overlay found, fenceId:",
+            fenceId
+          );
+          return null;
+        }
+
+        const isPolygon =
+          targetOverlay.CLASS_NAME === "AMap.Polygon" ||
+          (targetOverlay.getPath && !targetOverlay.getRadius);
+        const isCircle =
+          targetOverlay.CLASS_NAME === "AMap.Circle" ||
+          (targetOverlay.getRadius && targetOverlay.getCenter);
+
+        // 先获取 extData 中的其他字段（除了坐标相关字段）
+        const extData = targetOverlay.getExtData();
+        const result: Partial<FenceData> = {};
+
+        if (extData) {
+          // 复制所有字段，但排除坐标相关字段（这些要从覆盖物实时获取）
+          Object.keys(extData).forEach((key) => {
+            if (
+              key !== "coordinates" &&
+              key !== "radius" &&
+              key !== "shape_type" &&
+              key !== "_label"
+            ) {
+              (result as any)[key] = (extData as any)[key];
+            }
+          });
+        }
+
+        // 从覆盖物实时获取最新的坐标数据（这些是最准确的）
+        if (isPolygon) {
+          const path = targetOverlay.getPath();
+          if (path && Array.isArray(path)) {
+            result.coordinates = path.map((p: any) => [p.lng, p.lat]);
+            result.shape_type = "polygon";
+            console.log(
+              "getCurrentOverlayData: polygon coordinates",
+              result.coordinates
+            );
+          }
+        } else if (isCircle) {
+          const center = targetOverlay.getCenter();
+          if (center) {
+            result.coordinates = [[center.lng, center.lat]];
+            result.radius = targetOverlay.getRadius();
+            result.shape_type = "circle";
+            console.log(
+              "getCurrentOverlayData: circle coordinates",
+              result.coordinates,
+              "radius",
+              result.radius
+            );
+          }
+        }
+
+        console.log("getCurrentOverlayData: returning", result);
+        return result;
       },
     }));
     // 处理覆盖物被编辑的逻辑
     const handleOverlayEdit = (overlay: any) => {
-      if (mouseToolRef.current && (mouseToolRef.current as any)._enabled)
-        return;
+      // 先关闭绘制工具，确保可以编辑
+      if (mouseToolRef.current) {
+        mouseToolRef.current.close();
+      }
+      if (mapRef.current) {
+        mapRef.current.setDefaultCursor("default");
+      }
 
       // 如果已经在编辑其他的，先关闭之前的
       if (editorRef.current) {
@@ -266,8 +440,48 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
       currentOverlayRef.current = overlay;
       overlay.setOptions(STYLE_EDITING);
 
-      // 启动编辑
-      startEditor(overlay);
+      // 地图跳转到围栏位置
+      if (mapRef.current) {
+        try {
+          const isPolygon =
+            overlay.CLASS_NAME === "AMap.Polygon" ||
+            (overlay.getPath && !overlay.getRadius);
+          const isCircle =
+            overlay.CLASS_NAME === "AMap.Circle" ||
+            (overlay.getRadius && overlay.getCenter);
+
+          if (isPolygon) {
+            // 对于多边形，使用 getBounds() 获取边界并调整视图
+            const bounds = overlay.getBounds();
+            if (bounds) {
+              mapRef.current.setBounds(bounds, false, [50, 50, 50, 50]);
+            }
+          } else if (isCircle) {
+            // 对于圆形，跳转到圆心并根据半径调整缩放
+            const center = overlay.getCenter();
+            const radius = overlay.getRadius();
+            if (center) {
+              // 根据半径计算合适的缩放级别（半径越大，缩放级别越小）
+              let zoom = 15;
+              if (radius > 5000) zoom = 12;
+              else if (radius > 2000) zoom = 13;
+              else if (radius > 1000) zoom = 14;
+              else if (radius > 500) zoom = 15;
+              else if (radius > 200) zoom = 16;
+              else zoom = 17;
+
+              mapRef.current.setZoomAndCenter(zoom, center);
+            }
+          }
+        } catch (e) {
+          console.error("Error setting map view:", e);
+        }
+      }
+
+      // 启动编辑（延迟一点确保地图跳转完成）
+      setTimeout(() => {
+        startEditor(overlay);
+      }, 100);
 
       // 通知父组件
       const extData = overlay.getExtData();
@@ -315,42 +529,69 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
         editorRef.current.close();
       }
       const AMap = amapRef.current;
-      if (!AMap) return;
+      if (!AMap || !mapRef.current) return;
 
-      if (overlay.CLASS_NAME === "AMap.Polygon") {
+      // 增强类型判断，使用和 handleOverlayEdit 相同的逻辑
+      const isPolygon =
+        overlay.CLASS_NAME === "AMap.Polygon" ||
+        (overlay.getPath && !overlay.getRadius);
+      const isCircle =
+        overlay.CLASS_NAME === "AMap.Circle" ||
+        (overlay.getRadius && overlay.getCenter);
+
+      if (isPolygon) {
         const polyEditor = new AMap.PolyEditor(mapRef.current, overlay);
         polyEditor.open();
-        polyEditor.on("end", (event: any) => {
-          const newPath = event.target.getPath();
-          const newCoords = newPath.map((p: any) => [p.lng, p.lat]);
-          onEditComplete({ coordinates: newCoords });
-          // 编辑结束（如调整形状）时，也更新 Label 位置
-          const extData = overlay.getExtData();
-          updateOverlayLabel(overlay, extData);
-        });
-        // 监听 adjust 事件，实时更新 Label 位置（可选，如果性能允许）
+
+        // 定义一个函数来获取并更新坐标
+        const updateCoordinates = () => {
+          const newPath = overlay.getPath();
+          if (newPath && Array.isArray(newPath)) {
+            const newCoords = newPath.map((p: any) => [p.lng, p.lat]);
+            console.log("Polygon coordinates updated:", newCoords);
+            onEditComplete({
+              coordinates: newCoords,
+              shape_type: "polygon",
+            });
+            // 更新 Label 位置
+            const extData = overlay.getExtData();
+            updateOverlayLabel(overlay, extData);
+          }
+        };
+
+        polyEditor.on("end", updateCoordinates);
+        // 监听 adjust 事件，实时更新坐标和 Label 位置
         polyEditor.on("adjust", () => {
-          const extData = overlay.getExtData();
-          updateOverlayLabel(overlay, extData);
+          updateCoordinates();
         });
         editorRef.current = polyEditor;
-      } else if (overlay.CLASS_NAME === "AMap.Circle") {
+      } else if (isCircle) {
         const circleEditor = new AMap.CircleEditor(mapRef.current, overlay);
         circleEditor.open();
-        circleEditor.on("end", (event: any) => {
-          const newCenter = event.target.getCenter();
-          const newRadius = event.target.getRadius();
-          onEditComplete({
-            coordinates: [[newCenter.lng, newCenter.lat]],
-            radius: newRadius,
-          });
-          const extData = overlay.getExtData();
-          updateOverlayLabel(overlay, extData);
-        });
-        circleEditor.on("move", () => {
-          const extData = overlay.getExtData();
-          updateOverlayLabel(overlay, extData);
-        });
+
+        // 定义一个函数来获取并更新坐标
+        const updateCoordinates = () => {
+          const newCenter = overlay.getCenter();
+          const newRadius = overlay.getRadius();
+          if (newCenter) {
+            console.log("Circle coordinates updated:", {
+              center: [newCenter.lng, newCenter.lat],
+              radius: newRadius,
+            });
+            onEditComplete({
+              coordinates: [[newCenter.lng, newCenter.lat]],
+              radius: newRadius,
+              shape_type: "circle",
+            });
+            // 更新 Label 位置
+            const extData = overlay.getExtData();
+            updateOverlayLabel(overlay, extData);
+          }
+        };
+
+        circleEditor.on("end", updateCoordinates);
+        // 监听 move 事件，实时更新坐标和 Label 位置
+        circleEditor.on("move", updateCoordinates);
         editorRef.current = circleEditor;
       }
     };

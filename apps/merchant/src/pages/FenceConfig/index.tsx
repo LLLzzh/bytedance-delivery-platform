@@ -5,31 +5,38 @@ import {
   Space,
   message,
   Modal,
-  List,
   Tag,
   Typography,
+  Card,
 } from "antd";
 import { DeleteOutlined, EditOutlined } from "@ant-design/icons";
-import MapContainer, { MapContainerRef } from "./MapContainer";
-import OperationPanel from "./OperationPanel";
-import { FenceData, ruleOptions } from "./types";
+import MapContainer, { MapContainerRef } from "./components/MapContainer";
+import OperationPanel from "./components/OperationPanel";
+import { FenceData } from "./types";
+import { ruleOptions, MERCHANT_LOCATION } from "./constants";
 import { fenceService } from "../../services/fence";
+import { useFenceEditor } from "./hooks/useFenceEditor";
 
 const { Sider, Content } = Layout;
-
-// 商家门店位置常量，需要根据后端数据动态设置
-const MERCHANT_LOCATION: [number, number] = [116.397428, 39.90923];
 
 export default function FenceConfigPage() {
   const [drawingType, setDrawingType] = useState<"polygon" | "circle" | null>(
     null
   );
-  const [currentFence, setCurrentFence] = useState<Partial<FenceData> | null>(
-    null
-  );
-  const [panelVisible, setPanelVisible] = useState(false);
   const [fences, setFences] = useState<FenceData[]>([]);
   const mapRef = useRef<MapContainerRef>(null);
+
+  // 使用 custom hook 管理围栏编辑状态
+  const {
+    currentFence,
+    panelVisible,
+    startEdit: editorStartEdit,
+    onDrawComplete: editorOnDrawComplete,
+    onEditComplete: editorOnEditComplete,
+    cancelEdit: editorCancelEdit,
+    getLatestFenceData,
+    onSaveComplete: editorOnSaveComplete,
+  } = useFenceEditor(mapRef);
 
   // 加载围栏列表
   const loadFences = async () => {
@@ -47,42 +54,50 @@ export default function FenceConfigPage() {
   }, []);
 
   const handleDrawComplete = (data: Partial<FenceData>) => {
-    setCurrentFence((prev) => ({ ...prev, ...data }));
-    setPanelVisible(true);
+    editorOnDrawComplete(data);
   };
 
   const handleEditComplete = (data: Partial<FenceData>) => {
-    setCurrentFence((prev) => ({ ...prev, ...data }));
+    editorOnEditComplete(data);
   };
 
-  const handleSave = async (values: FenceData) => {
+  const handleSave = async (formValues: FenceData) => {
     try {
+      // 使用 hook 中的方法获取最新数据（优先从覆盖物获取）
+      const finalData = getLatestFenceData(formValues);
+
       let savedFence: FenceData;
-      if (values.id) {
+      if (finalData.id) {
         // 更新
-        savedFence = await fenceService.updateFence(values);
+        const { id, ...dataWithoutId } = finalData;
+        savedFence = await fenceService.updateFence(id, dataWithoutId);
         message.success("围栏更新成功");
       } else {
         // 新增
-        savedFence = await fenceService.createFence(values);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id, ...dataWithoutId } = finalData;
+        savedFence = await fenceService.createFence(dataWithoutId);
         message.success("围栏创建成功");
       }
 
-      // 确认地图操作（关闭编辑器等）
-      mapRef.current?.confirmOperation(savedFence);
-
-      // 更新本地状态
+      // 更新本地状态（先更新状态，让 useEffect 重新渲染）
       setFences((prev) => {
-        if (values.id) {
-          return prev.map((f) => (f.id === values.id ? savedFence : f));
+        if (finalData.id) {
+          return prev.map((f) => (f.id === finalData.id ? savedFence : f));
         } else {
           return [...prev, savedFence];
         }
       });
 
+      // 确认地图操作（关闭编辑器等）
+      // 使用 savedFence，它包含后端返回的最新数据
+      // 延迟一点调用，确保状态更新完成
+      setTimeout(() => {
+        mapRef.current?.confirmOperation(savedFence);
+      }, 0);
+
       // 重置状态
-      setPanelVisible(false);
-      setCurrentFence(null);
+      editorOnSaveComplete();
       setDrawingType(null);
     } catch (error) {
       console.error("Failed to save fence:", error);
@@ -106,8 +121,7 @@ export default function FenceConfigPage() {
           setFences((prev) => prev.filter((f) => f.id !== id));
 
           // 重置状态
-          setPanelVisible(false);
-          setCurrentFence(null);
+          editorCancelEdit();
           setDrawingType(null);
         } catch (error) {
           console.error("Failed to delete fence:", error);
@@ -119,14 +133,12 @@ export default function FenceConfigPage() {
 
   const handleCancel = () => {
     mapRef.current?.cancelOperation();
-    setPanelVisible(false);
-    setCurrentFence(null);
+    editorCancelEdit();
     setDrawingType(null);
   };
 
   const handleSelectFence = (data: FenceData) => {
-    setCurrentFence(data);
-    setPanelVisible(true);
+    editorStartEdit(data);
     setDrawingType(null);
     // 激活地图上的编辑状态
     mapRef.current?.startEdit(data);
@@ -163,13 +175,15 @@ export default function FenceConfigPage() {
             background: "#fff",
           }}
         >
-          <Space direction="vertical" style={{ width: "100%" }}>
+          <Space orientation="vertical" style={{ width: "100%" }}>
             <div style={{ fontSize: 16, fontWeight: "bold" }}>配送范围配置</div>
             <div style={{ color: "#666" }}>当前门店：测试位置</div>
             <Space style={{ marginTop: 8 }}>
               <Button
                 type={drawingType === "circle" ? "primary" : "default"}
                 onClick={() => {
+                  // 开始绘制新围栏时，清空当前围栏数据和面板
+                  editorCancelEdit();
                   setDrawingType("circle");
                   message.info("请在地图上按住鼠标左键拖拽绘制圆形");
                 }}
@@ -179,6 +193,8 @@ export default function FenceConfigPage() {
               <Button
                 type={drawingType === "polygon" ? "primary" : "default"}
                 onClick={() => {
+                  // 开始绘制新围栏时，清空当前围栏数据和面板
+                  editorCancelEdit();
                   setDrawingType("polygon");
                   message.info("请在地图上点击绘制多边形节点，双击结束绘制");
                 }}
@@ -203,34 +219,36 @@ export default function FenceConfigPage() {
               <div style={{ marginBottom: 16, fontWeight: "bold" }}>
                 围栏列表 ({fences.length})
               </div>
-              <List
-                dataSource={fences}
-                renderItem={(item) => {
+              <div>
+                {fences.map((item) => {
                   const rule = ruleOptions.find((r) => r.id === item.rule_id);
                   return (
-                    <List.Item
+                    <Card
+                      key={item.id}
+                      size="small"
+                      style={{
+                        background: "#fafafa",
+                        marginBottom: 8,
+                        borderRadius: 6,
+                        border: "1px solid #f0f0f0",
+                      }}
                       actions={[
                         <Button
+                          key="edit"
                           type="text"
                           icon={<EditOutlined />}
                           onClick={() => handleSelectFence(item)}
                         />,
                         <Button
+                          key="delete"
                           type="text"
                           danger
                           icon={<DeleteOutlined />}
                           onClick={() => handleDelete(item.id!)}
                         />,
                       ]}
-                      style={{
-                        background: "#fafafa",
-                        marginBottom: 8,
-                        padding: 12,
-                        borderRadius: 6,
-                        border: "1px solid #f0f0f0",
-                      }}
                     >
-                      <List.Item.Meta
+                      <Card.Meta
                         title={
                           <div style={{ textAlign: "left" }}>
                             <Space>
@@ -260,10 +278,10 @@ export default function FenceConfigPage() {
                           </Typography.Text>
                         }
                       />
-                    </List.Item>
+                    </Card>
                   );
-                }}
-              />
+                })}
+              </div>
               {fences.length === 0 && (
                 <div
                   style={{ textAlign: "center", color: "#999", marginTop: 32 }}

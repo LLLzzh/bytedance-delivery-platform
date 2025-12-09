@@ -4,6 +4,7 @@ import {
   Order,
   OrderListQueryDTO,
   PaginatedOrderList,
+  OrderStatistics,
 } from "./order.types.js";
 import { mapRowToOrder } from "./order.repository.js";
 import { Coordinates } from "../../shared/geo.types";
@@ -218,4 +219,16 @@ export async function deliverOrder(
 
   // 映射并返回 Order
   return mapRowToOrder(completedRow);
+}
+
+// ----------------------------------------------------------------------
+// 订单统计服务
+// ----------------------------------------------------------------------
+
+/**
+ * 获取订单统计信息
+ * @returns 订单统计数据
+ */
+export async function getOrderStatistics(): Promise<OrderStatistics> {
+  return await OrderRepository.getOrderStatistics(MOCK_MERCHANT_ID);
 }
