@@ -7,6 +7,7 @@ import { fenceController } from "./modules/fence/fence.controller";
 import { ruleController } from "./modules/rules/rules.controller";
 import { merchantController } from "./modules/merchant/merchant.controller";
 import { orderController } from "./modules/order/order.controller";
+import { dashboardController } from "./modules/dashboard/dashboard.controller";
 
 const fastify = Fastify({
   logger: true,
@@ -28,6 +29,7 @@ fastify.register(fenceController, { prefix: "/api/v1/fences" });
 fastify.register(ruleController, { prefix: "/api/v1/delivery-rules" });
 fastify.register(merchantController, { prefix: "/api/v1/merchant" });
 fastify.register(orderController, { prefix: "/api/v1/orders" });
+fastify.register(dashboardController, { prefix: "/api/v1/dashboard" });
 
 // Start server
 const start = async () => {
