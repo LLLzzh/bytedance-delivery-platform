@@ -27,6 +27,10 @@ function getIntervalByRuleId(ruleId: number): number {
 /**
  * 配送模拟器服务
  * 负责从数据库获取 shipping 状态的订单，按照路径推送位置到 worker 服务
+ *
+ * 推送策略：
+ * - 持续推送所有路径点，按 ruleId 确定的间隔推送
+ * - Worker 服务会根据是否有前端连接决定是否通过 WebSocket 推送
  */
 export class DeliverySimulator {
   private activeDeliveries: Map<string, MockDeliveryOrder> = new Map();
@@ -159,6 +163,7 @@ export class DeliverySimulator {
 
   /**
    * 启动订单的配送模拟
+   * 持续推送所有路径点，按 ruleId 确定的间隔推送
    */
   private startDelivery(order: MockDeliveryOrder): void {
     // 如果已经有定时器，先清除
@@ -201,14 +206,14 @@ export class DeliverySimulator {
       }
     };
 
-    // 启动定时器
+    // 启动定时器（使用正常的推送间隔）
     const timer = setInterval(simulateMovement, order.updateInterval);
     this.deliveryTimers.set(order.orderId, timer);
 
-    // 立即执行一次，然后开始定时推送
+    // 立即执行一次
     simulateMovement().catch((error) => {
       console.error(
-        `[DeliverySimulator] Error in initial movement for order ${order.orderId}:`,
+        `[DeliverySimulator] Error in delivery simulation for order ${order.orderId}:`,
         error
       );
     });
@@ -220,6 +225,9 @@ export class DeliverySimulator {
 
   /**
    * 推送位置到 worker 服务
+   * @param orderId 订单ID
+   * @param coords 位置坐标
+   * @param merchantId 商家ID
    */
   private async pushLocationToWorker(
     orderId: string,

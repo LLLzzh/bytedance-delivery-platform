@@ -390,7 +390,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
             strokeWeight: 4,
             strokeOpacity: 0.6,
             strokeStyle: "dashed",
-            zIndex: 50,
+            zIndex: 2, // 降低 z-index，确保不会覆盖底部面板
             map: map,
           });
           polylineRef.current = routePolyline;
@@ -404,7 +404,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
             strokeColor: "#1890ff",
             strokeWeight: 6,
             strokeOpacity: 0.8,
-            zIndex: 60,
+            zIndex: 3, // 降低 z-index，确保不会覆盖底部面板
             map: map,
           });
           traveledPolylineRef.current = traveledPolyline;
@@ -416,7 +416,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
             strokeColor: "#1890ff",
             strokeWeight: 6,
             strokeOpacity: 0.8,
-            zIndex: 60,
+            zIndex: 3, // 降低 z-index，确保不会覆盖底部面板
             map: map,
           });
           traveledPolylineRef.current = traveledPolyline;
@@ -440,7 +440,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
           `,
           offset: new AMap.Pixel(0, 0),
           anchor: "center",
-          zIndex: 100,
+          zIndex: 5, // 降低 z-index，确保不会覆盖底部面板（面板 z-index 为 10）
           angle: 0,
         });
         markerRef.current = marker;
@@ -647,6 +647,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
         height: "100%",
         overflow: "hidden",
         background: "#f0f0f0",
+        zIndex: 1, // 确保地图容器在底部面板（z-index: 10）之下
       }}
     >
       <div
@@ -654,6 +655,8 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
         style={{
           width: "100%",
           height: "100%",
+          position: "relative",
+          zIndex: 1, // 确保地图本身也在底部面板之下
         }}
       />
     </div>

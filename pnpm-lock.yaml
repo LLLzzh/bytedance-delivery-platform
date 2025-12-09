@@ -176,6 +176,9 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
+      fastify:
+        specifier: ^4.26.2
+        version: 4.29.1
       node-fetch:
         specifier: ^3.3.2
         version: 3.3.2

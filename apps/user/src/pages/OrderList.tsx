@@ -12,15 +12,19 @@ import {
   Drawer,
   Space,
   Radio,
+  Dropdown,
 } from "antd";
 import {
   SearchOutlined,
   FilterOutlined,
   MoreOutlined,
   EnvironmentOutlined,
+  PlusOutlined,
 } from "@ant-design/icons";
+import type { MenuProps } from "antd";
 import { useNavigate } from "react-router-dom";
 import { orderService, Order, OrderStatus } from "../services/order";
+import CreateOrderModal from "../components/CreateOrderModal";
 
 const { Text } = Typography;
 const { Header, Content } = Layout;
@@ -37,8 +41,8 @@ type TabKey =
 // Tab 配置
 const tabItems = [
   { key: "all", label: "全部" },
-  { key: "pending", label: "待付款" },
-  { key: "shipping", label: "待发货" },
+  { key: "pending", label: "待发货" },
+  { key: "shipping", label: "运输中" },
   { key: "arrived", label: "待收货" },
   { key: "delivered", label: "已完成" },
   { key: "cancelled", label: "已取消" },
@@ -61,6 +65,7 @@ const OrderList: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [filterVisible, setFilterVisible] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({});
+  const [createOrderVisible, setCreateOrderVisible] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: PAGE_SIZE,
@@ -216,15 +221,33 @@ const OrderList: React.FC = () => {
     setFilterVisible(false);
   };
 
+  // 处理新建订单成功
+  const handleCreateOrderSuccess = () => {
+    // 重新加载订单列表
+    loadOrders(1, false);
+  };
+
+  // 三个点菜单项
+  const moreMenuItems: MenuProps["items"] = [
+    {
+      key: "createOrder",
+      label: "新建订单",
+      icon: <PlusOutlined />,
+      onClick: () => {
+        setCreateOrderVisible(true);
+      },
+    },
+  ];
+
   // 获取状态显示文本和颜色
   const getStatusInfo = (status: OrderStatus) => {
     switch (status) {
       case OrderStatus.Pending:
-        return { text: "待付款", color: "orange" };
+        return { text: "待发货", color: "orange" };
       case OrderStatus.PickedUp:
         return { text: "已取件", color: "processing" };
       case OrderStatus.Shipping:
-        return { text: "待发货", color: "processing" };
+        return { text: "运输中", color: "processing" };
       case OrderStatus.Arrived:
         return { text: "待收货", color: "warning" };
       case OrderStatus.Delivered:
@@ -297,7 +320,13 @@ const OrderList: React.FC = () => {
             onClick={() => setFilterVisible(true)}
             style={{ padding: 0 }}
           />
-          <Button type="text" icon={<MoreOutlined />} style={{ padding: 0 }} />
+          <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+            <Button
+              type="text"
+              icon={<MoreOutlined />}
+              style={{ padding: 0 }}
+            />
+          </Dropdown>
         </Space>
       </Header>
 
@@ -322,11 +351,6 @@ const OrderList: React.FC = () => {
           tabBarGutter={24}
           indicator={{
             size: (origin) => origin - 16,
-            style: {
-              height: "2px",
-              background: "#ff2442",
-              borderRadius: "1px",
-            },
           }}
         />
       </div>
@@ -621,6 +645,13 @@ const OrderList: React.FC = () => {
           </div>
         </Space>
       </Drawer>
+
+      {/* 新建订单弹窗 */}
+      <CreateOrderModal
+        open={createOrderVisible}
+        onCancel={() => setCreateOrderVisible(false)}
+        onSuccess={handleCreateOrderSuccess}
+      />
     </Layout>
   );
 };

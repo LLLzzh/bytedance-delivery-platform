@@ -52,10 +52,12 @@ export class WebSocketClient {
   private reconnectTimer: number | null = null;
   private pingInterval: number | null = null;
   private readonly pingIntervalMs = 30000; // 30秒发送一次ping
+  private isManualDisconnect = false; // 标记是否为主动断开
 
   // 消息队列，确保轨迹点按顺序处理
   private pendingMessages: Map<number, PendingPositionUpdate> = new Map();
   private expectedSequence = 1; // 期望的下一个序列号
+  private isFirstMessageAfterConnect = true; // 标记连接后的第一条消息
 
   constructor(
     orderId: string,
@@ -81,6 +83,8 @@ export class WebSocketClient {
 
     try {
       console.log(`[WebSocket] Connecting to ${this.url}`);
+      // 重置主动断开标志
+      this.isManualDisconnect = false;
       this.ws = new WebSocket(this.url);
 
       this.ws.onopen = () => {
@@ -89,6 +93,7 @@ export class WebSocketClient {
         // 重置消息队列
         this.pendingMessages.clear();
         this.expectedSequence = 1;
+        this.isFirstMessageAfterConnect = true; // 标记这是连接后的第一条消息
         this.callbacks.onConnected?.(this.orderId);
         this.startPing();
       };
@@ -116,6 +121,12 @@ export class WebSocketClient {
         this.stopPing();
         this.callbacks.onClose?.();
 
+        // 如果是主动断开，不尝试重连
+        if (this.isManualDisconnect) {
+          console.log(`[WebSocket] Manual disconnect, skipping reconnect`);
+          return;
+        }
+
         // 如果不是主动关闭，尝试重连
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
@@ -135,6 +146,9 @@ export class WebSocketClient {
    * 断开连接
    */
   disconnect(): void {
+    // 标记为主动断开，防止自动重连
+    this.isManualDisconnect = true;
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -143,8 +157,10 @@ export class WebSocketClient {
     // 清理消息队列
     this.pendingMessages.clear();
     this.expectedSequence = 1;
+    this.isFirstMessageAfterConnect = true;
     if (this.ws) {
-      this.ws.close();
+      // 使用正常关闭码关闭连接
+      this.ws.close(1000, "Manual disconnect");
       this.ws = null;
     }
   }
@@ -162,13 +178,26 @@ export class WebSocketClient {
     // 如果没有序列号，直接处理（向后兼容）
     if (sequence === 0) {
       this.callbacks.onPositionUpdate?.(message.orderId, message.coordinates);
+      this.isFirstMessageAfterConnect = false;
       return;
+    }
+
+    // 如果是连接后的第一条消息，且序列号远大于期望值，说明是重新连接
+    // 重置期望序列号，直接处理该消息（避免因为序列号不匹配导致消息无法处理）
+    if (this.isFirstMessageAfterConnect && sequence > this.expectedSequence) {
+      console.log(
+        `[WebSocket] First message after reconnect, resetting sequence. Expected: ${this.expectedSequence}, Got: ${sequence}`
+      );
+      this.expectedSequence = sequence;
+      this.isFirstMessageAfterConnect = false;
+      // 继续处理这条消息（现在序列号匹配了）
     }
 
     // 如果收到的是期望的序列号，直接处理
     if (sequence === this.expectedSequence) {
       this.callbacks.onPositionUpdate?.(message.orderId, message.coordinates);
       this.expectedSequence++;
+      this.isFirstMessageAfterConnect = false;
 
       // 处理队列中等待的消息
       this.processPendingMessages();

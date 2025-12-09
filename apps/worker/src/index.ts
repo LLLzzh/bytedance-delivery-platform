@@ -20,6 +20,13 @@ const websocketManager = new WebSocketManager(fastify);
 const locationReceiver = new LocationReceiver(websocketManager);
 const anomalyDetector = new AnomalyDetector();
 
+// 设置 WebSocket 连接回调，通知 LocationReceiver
+websocketManager.setConnectionCallback({
+  onConnected: (orderId) => locationReceiver.notifyFrontendConnected(orderId),
+  onDisconnected: (orderId) =>
+    locationReceiver.notifyFrontendDisconnected(orderId),
+});
+
 // 注册 WebSocket 路由
 websocketManager.registerRoutes();
 

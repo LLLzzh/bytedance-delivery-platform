@@ -2,12 +2,34 @@ import { FastifyInstance } from "fastify";
 import { Coordinates } from "../shared/geo.types.js";
 
 /**
+ * WebSocket Socket 接口
+ * 定义 Fastify WebSocket 连接所需的方法和属性
+ */
+interface WebSocketSocket {
+  readyState: number;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  on(event: "close", listener: () => void): void;
+  on(event: "error", listener: (error: Error) => void): void;
+  on(event: "ping", listener: () => void): void;
+  pong(): void;
+}
+
+/**
  * WebSocket 连接信息
  */
 interface WebSocketConnection {
   orderId: string;
-  socket: WebSocket; // WebSocket 实例
+  socket: WebSocketSocket;
   connectedAt: Date;
+}
+
+/**
+ * 前端连接状态变化回调
+ */
+export interface FrontendConnectionCallback {
+  onConnected?: (orderId: string) => void;
+  onDisconnected?: (orderId: string) => void;
 }
 
 /**
@@ -17,9 +39,18 @@ interface WebSocketConnection {
 export class WebSocketManager {
   private connections: Map<string, Set<WebSocketConnection>> = new Map(); // orderId -> Set of connections
   private fastify: FastifyInstance;
+  private connectionCallback: FrontendConnectionCallback | null = null;
 
   constructor(fastify: FastifyInstance) {
     this.fastify = fastify;
+  }
+
+  /**
+   * 设置前端连接状态变化回调
+   * @param callback 回调函数
+   */
+  setConnectionCallback(callback: FrontendConnectionCallback): void {
+    this.connectionCallback = callback;
   }
 
   /**
@@ -39,9 +70,17 @@ export class WebSocketManager {
         }
 
         // 添加连接
-        manager.addConnection(orderId, connection.socket);
+        const isFirstConnection = manager.addConnection(
+          orderId,
+          connection.socket
+        );
 
         console.log(`[WebSocketManager] Client connected for order ${orderId}`);
+
+        // 如果是第一个连接，通知 LocationReceiver
+        if (isFirstConnection && manager.connectionCallback?.onConnected) {
+          manager.connectionCallback.onConnected(orderId);
+        }
 
         // 发送初始连接确认
         connection.socket.send(
@@ -54,10 +93,18 @@ export class WebSocketManager {
 
         // 处理断开连接
         connection.socket.on("close", () => {
-          manager.removeConnection(orderId, connection.socket);
+          const isLastConnection = manager.removeConnection(
+            orderId,
+            connection.socket
+          );
           console.log(
             `[WebSocketManager] Client disconnected for order ${orderId}`
           );
+
+          // 如果是最后一个连接断开，通知 LocationReceiver
+          if (isLastConnection && manager.connectionCallback?.onDisconnected) {
+            manager.connectionCallback.onDisconnected(orderId);
+          }
         });
 
         // 处理错误
@@ -79,8 +126,15 @@ export class WebSocketManager {
 
   /**
    * 添加 WebSocket 连接
+   * @param orderId 订单ID
+   * @param socket WebSocket 连接
+   * @returns 是否为第一个连接（用于判断是否需要通知 Mock Logistics）
    */
-  private addConnection(orderId: string, socket: WebSocket): void {
+  private addConnection(orderId: string, socket: WebSocketSocket): boolean {
+    const isFirstConnection =
+      !this.connections.has(orderId) ||
+      this.connections.get(orderId)!.size === 0;
+
     if (!this.connections.has(orderId)) {
       this.connections.set(orderId, new Set());
     }
@@ -92,12 +146,16 @@ export class WebSocketManager {
     };
 
     this.connections.get(orderId)!.add(connection);
+    return isFirstConnection;
   }
 
   /**
    * 移除 WebSocket 连接
+   * @param orderId 订单ID
+   * @param socket WebSocket 连接
+   * @returns 是否为最后一个连接（用于判断是否需要通知 LocationReceiver）
    */
-  private removeConnection(orderId: string, socket: WebSocket): void {
+  private removeConnection(orderId: string, socket: WebSocketSocket): boolean {
     const connections = this.connections.get(orderId);
     if (connections) {
       for (const conn of connections) {
@@ -107,11 +165,16 @@ export class WebSocketManager {
         }
       }
 
+      const isLastConnection = connections.size === 0;
+
       // 如果没有连接了，删除该订单的映射
-      if (connections.size === 0) {
+      if (isLastConnection) {
         this.connections.delete(orderId);
       }
+
+      return isLastConnection;
     }
+    return false;
   }
 
   /**

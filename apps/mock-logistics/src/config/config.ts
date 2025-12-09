@@ -25,4 +25,6 @@ export const config = {
   ),
   // 到达阈值（米），默认 100 米
   arrivalThreshold: parseInt(process.env.ARRIVAL_THRESHOLD || "100", 10),
+  // Mock Logistics 服务端口
+  port: parseInt(process.env.PORT || "3005", 10),
 };

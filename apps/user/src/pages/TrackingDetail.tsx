@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   Layout,
   Typography,
-  Timeline,
   Button,
   Empty,
   Card,
@@ -13,9 +12,6 @@ import {
 } from "antd";
 import {
   LeftOutlined,
-  ClockCircleOutlined,
-  HomeOutlined,
-  CarOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
   RadarChartOutlined,
@@ -47,89 +43,39 @@ interface TimelineItem {
 }
 
 /**
- * 生成时间线数据
+ * 生成时间线数据（按时间顺序，最新的在上面）
  */
 function generateTimeline(order: Order): TimelineItem[] {
   const timeline: TimelineItem[] = [];
   const now = new Date();
 
-  // 根据订单状态生成时间线
-  if (order.status === OrderStatus.Delivered) {
-    timeline.push({
-      time: order.lastUpdateTime
-        ? new Date(order.lastUpdateTime).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : now.toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-      date: order.lastUpdateTime
-        ? new Date(order.lastUpdateTime).toLocaleDateString("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-          })
-        : now.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
-      status: "已签收",
-      detail: "您的快件已由本人签收，感谢使用",
-      timestamp: order.lastUpdateTime,
-    });
-  }
+  // 格式化时间戳为 "MM-DD HH:mm" 格式
+  const formatDateTime = (
+    timestamp?: string
+  ): { date: string; time: string; fullTime: string } => {
+    const date = timestamp ? new Date(timestamp) : now;
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return {
+      date: `${month}-${day}`,
+      time: `${hours}:${minutes}`,
+      fullTime: `${month}-${day} ${hours}:${minutes}`,
+    };
+  };
 
-  if (
-    order.status === OrderStatus.Arrived ||
-    order.status === OrderStatus.Delivered
-  ) {
-    timeline.push({
-      time: order.lastUpdateTime
-        ? new Date(order.lastUpdateTime).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : now.toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-      date: order.lastUpdateTime
-        ? new Date(order.lastUpdateTime).toLocaleDateString("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-          })
-        : now.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
-      status: "已到达",
-      detail: "包裹已到达目的地，请准备收货",
-      timestamp: order.lastUpdateTime,
-    });
-  }
+  // 根据订单状态生成时间线（按时间顺序，从旧到新）
+  // 1. 已下单（最早）
+  timeline.push({
+    time: formatDateTime(order.createTime).time,
+    date: formatDateTime(order.createTime).date,
+    status: "已下单",
+    detail: "商家已接单，准备发货",
+    timestamp: order.createTime,
+  });
 
-  if (
-    order.status === OrderStatus.Shipping ||
-    order.status === OrderStatus.Arrived ||
-    order.status === OrderStatus.Delivered
-  ) {
-    timeline.push({
-      time: order.lastUpdateTime
-        ? new Date(order.lastUpdateTime).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : now.toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-      date: order.lastUpdateTime
-        ? new Date(order.lastUpdateTime).toLocaleDateString("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-          })
-        : now.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
-      status: "运输中",
-      detail: "快件正在运输途中",
-      timestamp: order.lastUpdateTime,
-    });
-  }
-
+  // 2. 已发货
   if (
     order.status === OrderStatus.PickedUp ||
     order.status === OrderStatus.Shipping ||
@@ -137,46 +83,55 @@ function generateTimeline(order: Order): TimelineItem[] {
     order.status === OrderStatus.Delivered
   ) {
     timeline.push({
-      time: order.createTime
-        ? new Date(order.createTime).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : now.toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-      date: order.createTime
-        ? new Date(order.createTime).toLocaleDateString("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-          })
-        : now.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
+      time: formatDateTime(order.createTime).time,
+      date: formatDateTime(order.createTime).date,
       status: "已发货",
       detail: "包裹已从商家发出",
       timestamp: order.createTime,
     });
   }
 
-  timeline.push({
-    time: order.createTime
-      ? new Date(order.createTime).toLocaleTimeString("zh-CN", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-    date: order.createTime
-      ? new Date(order.createTime).toLocaleDateString("zh-CN", {
-          month: "2-digit",
-          day: "2-digit",
-        })
-      : now.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
-    status: "已下单",
-    detail: "商家已接单，准备发货",
-    timestamp: order.createTime,
-  });
+  // 3. 运输中
+  if (
+    order.status === OrderStatus.Shipping ||
+    order.status === OrderStatus.Arrived ||
+    order.status === OrderStatus.Delivered
+  ) {
+    timeline.push({
+      time: formatDateTime(order.lastUpdateTime).time,
+      date: formatDateTime(order.lastUpdateTime).date,
+      status: "运输中",
+      detail: "快件正在运输途中",
+      timestamp: order.lastUpdateTime,
+    });
+  }
 
-  // 按时间倒序排列（最新的在前）
+  // 4. 已到达
+  if (
+    order.status === OrderStatus.Arrived ||
+    order.status === OrderStatus.Delivered
+  ) {
+    timeline.push({
+      time: formatDateTime(order.lastUpdateTime).time,
+      date: formatDateTime(order.lastUpdateTime).date,
+      status: "已到达",
+      detail: "包裹已到达目的地，请准备收货",
+      timestamp: order.lastUpdateTime,
+    });
+  }
+
+  // 5. 已签收（最新）
+  if (order.status === OrderStatus.Delivered) {
+    timeline.push({
+      time: formatDateTime(order.lastUpdateTime).time,
+      date: formatDateTime(order.lastUpdateTime).date,
+      status: "已签收",
+      detail: "您的快件已由本人签收，感谢使用",
+      timestamp: order.lastUpdateTime,
+    });
+  }
+
+  // 按时间倒序排列（最新的在上面）
   return timeline.reverse();
 }
 
@@ -286,6 +241,7 @@ const TrackingDetail: React.FC = () => {
   }, [loadOrderDetail]);
 
   // WebSocket 位置更新回调
+  // 使用平滑动画更新小车位置
   const handlePositionUpdate = useCallback((coordinates: Coordinates) => {
     console.log("[TrackingDetail] Position updated:", coordinates);
     setPathData((prev) => {
@@ -307,6 +263,7 @@ const TrackingDetail: React.FC = () => {
 
       return {
         ...prev,
+        // 更新当前位置（DeliveryMap 组件会自动使用平滑动画）
         currentPosition: coordinates,
         // 只有新位置才添加到路径
         traveledPath: isNewPosition
@@ -867,7 +824,7 @@ const TrackingDetail: React.FC = () => {
             flex: 1,
             overflowY: "auto",
             padding: "20px",
-            background: "#fff",
+            background: "#f5f5f5",
           }}
         >
           {loading && !order ? (
@@ -884,12 +841,19 @@ const TrackingDetail: React.FC = () => {
           ) : !order ? (
             <Empty description="未找到订单信息" />
           ) : (
-            <Card bordered={false} style={{ boxShadow: "none" }}>
+            <Card
+              bordered={false}
+              style={{
+                boxShadow: "none",
+                background: "#fff",
+                borderRadius: "8px",
+              }}
+            >
               {/* 订单基本信息 */}
               <div
                 style={{
-                  marginBottom: "20px",
-                  paddingBottom: "16px",
+                  marginBottom: "24px",
+                  paddingBottom: "20px",
                   borderBottom: "1px solid #f0f0f0",
                 }}
               >
@@ -898,36 +862,53 @@ const TrackingDetail: React.FC = () => {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    marginBottom: "8px",
+                    marginBottom: "12px",
                   }}
                 >
-                  <Text strong style={{ fontSize: "16px" }}>
+                  <Text strong style={{ fontSize: "16px", color: "#333" }}>
                     订单号: {order.id.slice(-8)}
                   </Text>
                   {statusInfo && (
-                    <Tag color={statusInfo.color}>{statusInfo.text}</Tag>
+                    <Tag
+                      color={statusInfo.color}
+                      style={{
+                        fontSize: "13px",
+                        padding: "2px 8px",
+                        borderRadius: "2px",
+                      }}
+                    >
+                      {statusInfo.text}
+                    </Tag>
                   )}
                 </div>
                 <div
                   style={{
                     fontSize: "14px",
                     color: "#666",
-                    marginBottom: "4px",
+                    marginBottom: "8px",
+                    lineHeight: "22px",
                   }}
                 >
                   <Text>收货人: {order.recipientName}</Text>
                 </div>
-                <div style={{ fontSize: "14px", color: "#666" }}>
+                <div
+                  style={{
+                    fontSize: "14px",
+                    color: "#666",
+                    marginBottom: "12px",
+                    lineHeight: "22px",
+                  }}
+                >
                   <Text>收货地址: {order.recipientAddress}</Text>
                 </div>
                 <div
                   style={{
-                    fontSize: "16px",
-                    color: "#f5222d",
-                    marginTop: "8px",
+                    fontSize: "18px",
+                    color: "#ff4d4f",
+                    fontWeight: 600,
                   }}
                 >
-                  <Text strong>订单金额: ¥{order.amount.toFixed(2)}</Text>
+                  <Text>订单金额: ¥{order.amount.toFixed(2)}</Text>
                 </div>
                 <div
                   style={{
@@ -999,55 +980,139 @@ const TrackingDetail: React.FC = () => {
                 </div>
               </div>
 
-              <Timeline
-                items={timeline.map((item, index) => ({
-                  color: index === 0 ? "green" : "gray",
-                  dot:
-                    index === 0 ? (
-                      <CarOutlined style={{ fontSize: "16px" }} />
-                    ) : index === timeline.length - 1 ? (
-                      <HomeOutlined style={{ fontSize: "16px" }} />
-                    ) : (
-                      <ClockCircleOutlined style={{ fontSize: "16px" }} />
-                    ),
-                  children: (
-                    <div style={{ paddingBottom: "20px" }}>
+              {/* 淘宝风格的时间线 */}
+              <div style={{ padding: "16px 0 0 0" }}>
+                <div
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: 600,
+                    color: "#333",
+                    marginBottom: "20px",
+                    paddingBottom: "12px",
+                    borderBottom: "1px solid #f0f0f0",
+                  }}
+                >
+                  物流跟踪
+                </div>
+                {timeline.map((item, index) => {
+                  const isLatest = index === 0;
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        display: "flex",
+                        position: "relative",
+                        paddingBottom:
+                          index < timeline.length - 1 ? "28px" : "8px",
+                      }}
+                    >
+                      {/* 左侧时间线 */}
                       <div
                         style={{
                           display: "flex",
-                          justifyContent: "space-between",
+                          flexDirection: "column",
                           alignItems: "center",
-                          marginBottom: "4px",
+                          marginRight: "16px",
+                          flexShrink: 0,
                         }}
                       >
-                        <Text
-                          strong={index === 0}
+                        {/* 圆点 */}
+                        <div
                           style={{
-                            fontSize: index === 0 ? "16px" : "14px",
-                            color: index === 0 ? "#000" : "#666",
+                            width: isLatest ? "18px" : "12px",
+                            height: isLatest ? "18px" : "12px",
+                            borderRadius: "50%",
+                            backgroundColor: isLatest ? "#52c41a" : "#d9d9d9",
+                            border: isLatest
+                              ? "3px solid #fff"
+                              : "2px solid #fff",
+                            boxShadow: isLatest
+                              ? "0 0 0 2px rgba(82, 196, 26, 0.2)"
+                              : "none",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            zIndex: 2,
+                            position: "relative",
+                            transition: "all 0.3s ease",
                           }}
                         >
-                          {item.status}
-                        </Text>
-                        <div style={{ textAlign: "right" }}>
+                          {isLatest && (
+                            <div
+                              style={{
+                                width: "6px",
+                                height: "6px",
+                                borderRadius: "50%",
+                                backgroundColor: "#fff",
+                              }}
+                            />
+                          )}
+                        </div>
+                        {/* 连接线 */}
+                        {index < timeline.length - 1 && (
+                          <div
+                            style={{
+                              width: "2px",
+                              flex: 1,
+                              backgroundColor: isLatest ? "#52c41a" : "#e8e8e8",
+                              marginTop: "6px",
+                              minHeight: "32px",
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {/* 右侧内容 */}
+                      <div
+                        style={{
+                          flex: 1,
+                          paddingTop: isLatest ? "0" : "2px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-start",
+                            marginBottom: "8px",
+                          }}
+                        >
                           <Text
-                            type="secondary"
-                            style={{ fontSize: "12px", display: "block" }}
+                            style={{
+                              fontSize: isLatest ? "16px" : "15px",
+                              color: isLatest ? "#333" : "#666",
+                              fontWeight: isLatest ? 600 : 400,
+                              lineHeight: "22px",
+                            }}
                           >
-                            {item.date}
+                            {item.status}
                           </Text>
-                          <Text type="secondary" style={{ fontSize: "12px" }}>
-                            {item.time}
+                          <Text
+                            style={{
+                              fontSize: "13px",
+                              color: "#999",
+                              marginLeft: "12px",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {item.date} {item.time}
                           </Text>
                         </div>
+                        <Text
+                          style={{
+                            fontSize: "14px",
+                            color: "#999",
+                            lineHeight: "20px",
+                            display: "block",
+                          }}
+                        >
+                          {item.detail}
+                        </Text>
                       </div>
-                      <Text type="secondary" style={{ fontSize: "13px" }}>
-                        {item.detail}
-                      </Text>
                     </div>
-                  ),
-                }))}
-              />
+                  );
+                })}
+              </div>
             </Card>
           )}
         </Content>

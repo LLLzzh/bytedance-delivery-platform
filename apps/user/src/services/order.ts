@@ -89,9 +89,45 @@ export interface OrderPathData {
 }
 
 /**
+ * 创建订单请求参数
+ */
+export interface CreateOrderRequest {
+  userId: string;
+  amount: number;
+  recipientName: string;
+  recipientAddress: string;
+  recipientCoords: Coordinates;
+  merchantId?: string;
+}
+
+/**
+ * 创建订单响应
+ */
+export interface CreateOrderResponse {
+  success: boolean;
+  order: Order;
+}
+
+/**
  * 订单服务
  */
 export const orderService = {
+  /**
+   * 创建订单
+   */
+  async createOrder(data: CreateOrderRequest): Promise<CreateOrderResponse> {
+    const response = await apiClient.post<CreateOrderResponse>(
+      "/api/v1/orders",
+      data
+    );
+    // extractData 总是返回一个对象，但 TypeScript 认为 data 可能是 undefined
+    // 实际上根据 extractData 的实现，它总是会返回一个 ApiResponse 对象
+    // 如果后端直接返回业务数据，extractData 会将其包装在 data 字段中
+    // 如果后端返回的数据已经是 ApiResponse 格式，则直接返回
+    // 这里使用类型断言，因为实际运行时总是有值的
+    return (response.data ?? response) as CreateOrderResponse;
+  },
+
   /**
    * 获取订单列表
    */
@@ -99,7 +135,7 @@ export const orderService = {
     const response = await apiClient.get<PaginatedOrderList>("/api/v1/orders", {
       params,
     });
-    return response.data;
+    return (response.data ?? response) as PaginatedOrderList;
   },
 
   /**
@@ -109,7 +145,7 @@ export const orderService = {
     const response = await apiClient.get<OrderDetailResponse>(
       `/api/v1/orders/${orderId}`
     );
-    return response.data;
+    return (response.data ?? response) as OrderDetailResponse;
   },
 
   /**
@@ -119,7 +155,7 @@ export const orderService = {
     const response = await apiClient.get<OrderPathData>(
       `/api/v1/orders/${orderId}/path`
     );
-    return response.data;
+    return (response.data ?? response) as OrderPathData;
   },
 
   /**
@@ -133,6 +169,10 @@ export const orderService = {
       message: string;
       data: { order: Order };
     }>(`/api/v1/orders/${orderId}/deliver`);
-    return response.data;
+    return (response.data ?? response) as {
+      success: boolean;
+      message: string;
+      data: { order: Order };
+    };
   },
 };
