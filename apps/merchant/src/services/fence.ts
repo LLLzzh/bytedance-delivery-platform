@@ -1,93 +1,111 @@
-import { FenceData } from "../pages/FenceConfig/types";
+import { apiClient } from "./api-client";
+import type { FenceData } from "../pages/FenceConfig/types";
 
-// 假设后端 API 基础路径
-//const API_BASE_URL = '/api/fences';
-
-// 通用请求处理函数，有后端数据时可替换为实际请求库
-/*
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      // 'Authorization': 'Bearer token' // 如果需要鉴权
-    },
-    ...options,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  return response.json();
+// 后端返回的格式（camelCase）
+interface BackendFenceData {
+  id: number;
+  fenceName?: string;
+  fenceDesc?: string;
+  ruleId?: number | null;
+  shapeType: "polygon" | "circle";
+  coordinates: number[][];
+  radius: number;
+  geometry?: unknown;
 }
-*/
+
+interface FenceResponse {
+  success: boolean;
+  fence: BackendFenceData;
+}
+
+interface FenceListResponse {
+  success: boolean;
+  fences: BackendFenceData[];
+}
+
+// 数据转换：后端 camelCase -> 前端 snake_case
+function backendToFrontend(backend: BackendFenceData): FenceData {
+  return {
+    id: backend.id,
+    fence_name: backend.fenceName || "",
+    fence_desc: backend.fenceDesc || "",
+    rule_id: backend.ruleId ?? null,
+    shape_type: backend.shapeType,
+    coordinates: backend.coordinates,
+    radius: backend.radius,
+  };
+}
+
+// 数据转换：前端 snake_case -> 后端 camelCase
+function frontendToBackend(
+  frontend: Omit<FenceData, "id">
+): Omit<BackendFenceData, "id" | "geometry"> {
+  return {
+    fenceName: frontend.fence_name,
+    fenceDesc: frontend.fence_desc,
+    ruleId: frontend.rule_id,
+    shapeType: frontend.shape_type,
+    coordinates: frontend.coordinates,
+    radius: frontend.radius,
+  };
+}
 
 export const fenceService = {
-  // 获取围栏列表
-  getFences: async (): Promise<FenceData[]> => {
-    // 真实接口调用示例：
-    // return request<FenceData[]>(API_BASE_URL);
-
-    // 模拟数据返回
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve([
-          {
-            id: 1,
-            fence_name: "已保存围栏1",
-            fence_desc: "测试描述",
-            rule_id: 101,
-            shape_type: "circle",
-            coordinates: [[116.397428, 39.90923]],
-            radius: 1000,
-          },
-        ]);
-      }, 500);
-    });
+  /**
+   * 获取围栏列表
+   */
+  async getFences(): Promise<FenceData[]> {
+    const response = await apiClient
+      .getInstance()
+      .get<FenceListResponse>("/api/v1/fences");
+    // 后端直接返回 { success: true, fences: [...] }
+    const data = response.data as FenceListResponse;
+    const backendFences = data?.fences || [];
+    return backendFences.map(backendToFrontend);
   },
 
-  // 新增围栏
-  createFence: async (data: FenceData): Promise<FenceData> => {
-    // return request<FenceData>(API_BASE_URL, {
-    //   method: 'POST',
-    //   body: JSON.stringify(data),
-    // });
-
-    console.log("Create fence:", data);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ ...data, id: Date.now() });
-      }, 500);
-    });
+  /**
+   * 获取单个围栏详情
+   */
+  async getFenceById(id: string | number): Promise<FenceData> {
+    const response = await apiClient
+      .getInstance()
+      .get<FenceResponse>(`/api/v1/fences/${id}`);
+    const data = response.data as FenceResponse;
+    return backendToFrontend(data.fence);
   },
 
-  // 更新围栏
-  updateFence: async (data: FenceData): Promise<FenceData> => {
-    if (!data.id) throw new Error("Missing fence ID for update");
-    // return request<FenceData>(`${API_BASE_URL}/${data.id}`, {
-    //   method: 'PUT',
-    //   body: JSON.stringify(data),
-    // });
-
-    console.log("Update fence:", data);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(data);
-      }, 500);
-    });
+  /**
+   * 创建围栏
+   */
+  async createFence(data: Omit<FenceData, "id">): Promise<FenceData> {
+    const backendData = frontendToBackend(data);
+    const response = await apiClient
+      .getInstance()
+      .post<FenceResponse>("/api/v1/fences", backendData);
+    const resData = response.data as FenceResponse;
+    return backendToFrontend(resData.fence);
   },
 
-  // 删除围栏
-  deleteFence: async (id: string | number): Promise<void> => {
-    // return request<void>(`${API_BASE_URL}/${id}`, {
-    //   method: 'DELETE',
-    // });
+  /**
+   * 更新围栏
+   */
+  async updateFence(
+    id: string | number,
+    data: Omit<FenceData, "id">
+  ): Promise<FenceData> {
+    const backendData = frontendToBackend(data);
+    const response = await apiClient
+      .getInstance()
+      .put<FenceResponse>(`/api/v1/fences/${id}`, backendData);
+    const resData = response.data as FenceResponse;
+    return backendToFrontend(resData.fence);
+  },
 
-    console.log("Delete fence:", id);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 500);
-    });
+  /**
+   * 删除围栏
+   */
+  async deleteFence(id: string | number): Promise<void> {
+    await apiClient.getInstance().delete(`/api/v1/fences/${id}`);
   },
 };

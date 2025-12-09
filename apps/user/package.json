@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@repo/http-client": "workspace:*",
     "@repo/ui": "workspace:*",
     "antd": "^6.0.0",
     "antd-mobile": "^5.41.1",

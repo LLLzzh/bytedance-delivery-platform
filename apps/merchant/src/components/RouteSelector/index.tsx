@@ -1,12 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from "react";
-import { Modal, List, Tag, Button, Typography, Spin, message } from "antd";
+import {
+  Modal,
+  Tag,
+  Button,
+  Typography,
+  Spin,
+  message,
+  Flex,
+  Space,
+} from "antd";
 import AMapLoader from "@amap/amap-jsapi-loader";
 
 interface RouteSelectorProps {
   open?: boolean;
   onClose?: () => void;
-  onConfirm?: (route: any) => void;
+  onConfirm?: (route: any) => void; // 在 inline 模式下，当路线更新时调用
   startLngLat: [number, number]; // [lng, lat]
   endLngLat: [number, number]; // [lng, lat]
   waypoints?: [number, number][]; // 途经点
@@ -29,10 +38,53 @@ export default function RouteSelector({
   const [routes, setRoutes] = useState<any[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const polylinesRef = useRef<any[]>([]);
+  // 用于跟踪上次请求的参数，避免重复请求
+  const lastRequestParamsRef = useRef<string>("");
+  const isRequestingRef = useRef<boolean>(false);
+  const hasResultRef = useRef<boolean>(false);
+
+  // 生成请求参数的唯一标识
+  const getRequestKey = (
+    start: [number, number],
+    end: [number, number],
+    waypoints: [number, number][]
+  ) => {
+    const waypointsStr = waypoints.map((w) => `${w[0]},${w[1]}`).join("|");
+    return `${start[0]},${start[1]}-${end[0]},${end[1]}-${waypointsStr}`;
+  };
 
   // 初始化地图
   useEffect(() => {
-    if (mode === "modal" && !open) return;
+    if (mode === "modal" && !open) {
+      // Modal 关闭时重置状态
+      hasResultRef.current = false;
+      return;
+    }
+
+    const requestKey = getRequestKey(startLngLat, endLngLat, waypoints);
+
+    // 如果参数没有变化且正在请求中，则不重复请求
+    if (
+      lastRequestParamsRef.current === requestKey &&
+      isRequestingRef.current
+    ) {
+      return;
+    }
+
+    // 如果参数没有变化且已经请求过并得到结果，则不重复请求
+    if (lastRequestParamsRef.current === requestKey && hasResultRef.current) {
+      return;
+    }
+
+    // 如果参数变化了，重置结果状态
+    if (lastRequestParamsRef.current !== requestKey) {
+      hasResultRef.current = false;
+      setRoutes([]);
+    }
+
+    // 更新请求参数标识
+    lastRequestParamsRef.current = requestKey;
+    isRequestingRef.current = true;
 
     // 设置安全密钥
     (window as any)._AMapSecurityConfig = {
@@ -58,12 +110,10 @@ export default function RouteSelector({
       .catch((e) => {
         console.error(e);
         message.error("地图加载失败");
+        isRequestingRef.current = false;
       });
 
-    return () => {
-      // Modal 关闭时不销毁地图实例，避免重复创建开销，或者可以在 onClose 中手动销毁
-      // 这里为了简单，每次 open 重新规划，但地图实例复用
-    };
+    return () => {};
   }, [open, startLngLat, endLngLat, waypoints]);
 
   const planRoutes = async (AMap: any) => {
@@ -106,8 +156,8 @@ export default function RouteSelector({
       { code: 1, label: "经济路线" },
     ];
 
-    const fetchRoute = (policy: number) => {
-      return new Promise<any>((resolve) => {
+    const fetchRoute = (policy: number, index: number) => {
+      return new Promise<{ route: any; error: string | null }>((resolve) => {
         const driving = new AMap.Driving({
           policy: policy,
           map: null,
@@ -122,9 +172,32 @@ export default function RouteSelector({
               result.routes &&
               result.routes.length
             ) {
-              resolve(result.routes[0]); // 取该策略下的第一条
+              resolve({ route: result.routes[0], error: null }); // 取该策略下的第一条
+            } else if (status === "error" || status === "no_data") {
+              // 检查是否有错误信息
+              const errorInfo = result?.info || "";
+              const errorCode = result?.infocode || "";
+
+              // 检查是否是QPS超限错误
+              if (
+                errorInfo.includes("CUQPS_HAS_EXCEEDED_THE_LIMIT") ||
+                errorInfo.includes("QPS") ||
+                errorCode === "10021"
+              ) {
+                resolve({
+                  route: null,
+                  error: "QPS_LIMIT",
+                });
+              } else {
+                // 其他错误
+                console.warn(
+                  `路径规划策略 ${policies[index].label} 失败:`,
+                  errorInfo
+                );
+                resolve({ route: null, error: errorInfo || "路径规划失败" });
+              }
             } else {
-              resolve(null);
+              resolve({ route: null, error: null });
             }
           }
         );
@@ -132,22 +205,37 @@ export default function RouteSelector({
     };
 
     try {
-      // 并行请求不同策略的路线
-      const results = await Promise.all(
-        policies.map((p) => fetchRoute(p.code))
-      );
+      // 添加延迟以避免并发请求过多导致QPS超限
+      // 串行请求，每个请求间隔200ms
+      const results: Array<{ route: any; error: string | null }> = [];
+      for (let i = 0; i < policies.length; i++) {
+        if (i > 0) {
+          // 除了第一个请求，其他请求延迟执行
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        const result = await fetchRoute(policies[i].code, i);
+        results.push(result);
+      }
+
+      // 检查是否有QPS超限错误
+      const qpsErrors = results.filter((r) => r.error === "QPS_LIMIT");
+      if (qpsErrors.length > 0) {
+        message.error("请求过于频繁，请稍后再试（QPS超限）");
+        setLoading(false);
+        return;
+      }
 
       // 过滤无效结果并去重
       const uniqueRoutes: any[] = [];
       const seenKeys = new Set<string>();
 
-      results.forEach((route) => {
-        if (route) {
+      results.forEach((result) => {
+        if (result.route) {
           // 简单的去重键：距离+时间
-          const key = `${route.distance}-${route.time}`;
+          const key = `${result.route.distance}-${result.route.time}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
-            uniqueRoutes.push(route);
+            uniqueRoutes.push(result.route);
           }
         }
       });
@@ -156,14 +244,28 @@ export default function RouteSelector({
         setRoutes(uniqueRoutes);
         setSelectedIndex(0);
         drawRoutes(AMap, uniqueRoutes, 0);
+        hasResultRef.current = true; // 标记已有结果
+        // 在 inline 模式下，自动通知父组件路线已更新
+        if (mode === "inline" && onConfirm && uniqueRoutes[0]) {
+          onConfirm(uniqueRoutes[0]);
+        }
       } else {
-        message.warning("未找到合适路径");
+        // 检查是否有其他错误信息
+        const otherErrors = results.filter(
+          (r) => r.error && r.error !== "QPS_LIMIT"
+        );
+        if (otherErrors.length > 0) {
+          message.warning(`路径规划失败: ${otherErrors[0].error}`);
+        } else {
+          message.warning("未找到合适路径");
+        }
       }
     } catch (error) {
       console.error("Route planning error:", error);
       message.error("路径规划出错");
     } finally {
       setLoading(false);
+      isRequestingRef.current = false;
     }
   };
 
@@ -218,6 +320,10 @@ export default function RouteSelector({
     setSelectedIndex(index);
     if (mapRef.current && (window as any).AMap) {
       drawRoutes((window as any).AMap, routes, index);
+      // 在 inline 模式下，通知父组件路线已切换
+      if (mode === "inline" && onConfirm && routes[index]) {
+        onConfirm(routes[index]);
+      }
     }
   };
 
@@ -281,11 +387,14 @@ export default function RouteSelector({
               background: "rgba(255,255,255,0.7)",
               zIndex: 100,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
+              gap: "8px",
             }}
           >
-            <Spin tip="路径规划中..." />
+            <Spin size="large" />
+            <Typography.Text type="secondary">路径规划中...</Typography.Text>
           </div>
         )}
         <div
@@ -299,10 +408,10 @@ export default function RouteSelector({
         <Typography.Title level={5} style={{ marginTop: 0 }}>
           备选方案 ({routes.length})
         </Typography.Title>
-        <List
-          dataSource={routes}
-          renderItem={(item, index) => (
-            <List.Item
+        <Flex vertical gap={8}>
+          {routes.map((item, index) => (
+            <div
+              key={index}
               onClick={() => handleSelectRoute(index)}
               style={{
                 cursor: "pointer",
@@ -312,36 +421,35 @@ export default function RouteSelector({
                     ? "1px solid #1890ff"
                     : "1px solid #f0f0f0",
                 borderRadius: "6px",
-                marginBottom: "8px",
                 padding: "12px",
                 transition: "all 0.3s",
               }}
             >
-              <div style={{ width: "100%" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: "4px",
-                  }}
-                >
-                  <span style={{ fontWeight: "bold" }}>方案 {index + 1}</span>
-                  {index === 0 && <Tag color="green">推荐</Tag>}
+              <Flex
+                justify="space-between"
+                align="center"
+                style={{ marginBottom: "4px" }}
+              >
+                <Typography.Text strong>方案 {index + 1}</Typography.Text>
+                {index === 0 && <Tag color="green">推荐</Tag>}
+              </Flex>
+              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                <div style={{ color: "#666", fontSize: "13px" }}>
+                  预计耗时：
+                  <span style={{ color: "#faad14", fontWeight: "bold" }}>
+                    {formatTime(item.time)}
+                  </span>
                 </div>
                 <div style={{ color: "#666", fontSize: "13px" }}>
-                  <div>
-                    预计耗时：
-                    <span style={{ color: "#faad14", fontWeight: "bold" }}>
-                      {formatTime(item.time)}
-                    </span>
-                  </div>
-                  <div>路程距离：{formatDistance(item.distance)}</div>
-                  <div>红绿灯数：{item.traffic_lights || 0} 个</div>
+                  路程距离：{formatDistance(item.distance)}
                 </div>
-              </div>
-            </List.Item>
-          )}
-        />
+                <div style={{ color: "#666", fontSize: "13px" }}>
+                  红绿灯数：{item.traffic_lights || 0} 个
+                </div>
+              </Space>
+            </div>
+          ))}
+        </Flex>
       </div>
     </div>
   );

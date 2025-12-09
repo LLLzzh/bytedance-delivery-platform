@@ -12,6 +12,7 @@
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
     "@ant-design/icons": "^6.1.0",
+    "@repo/http-client": "workspace:*",
     "@repo/ui": "workspace:*",
     "antd": "^6.0.0",
     "axios": "^1.13.2",

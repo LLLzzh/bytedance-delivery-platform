@@ -1,18 +1,29 @@
 // merchant/src/App.tsx
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 // ✅ 添加这些组件的 import
-import { Layout, Menu, MenuProps, theme, Typography } from 'antd'; // 文本组件
-import { CarOutlined, DashboardOutlined, EnvironmentOutlined, RocketOutlined } from '@ant-design/icons'; // 图标
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, Outlet } from 'react-router-dom'; // 路由
+import { Layout, Menu, MenuProps, theme, Typography } from "antd"; // 文本组件
+import {
+  CarOutlined,
+  DashboardOutlined,
+  EnvironmentOutlined,
+  RocketOutlined,
+} from "@ant-design/icons"; // 图标
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+  Outlet,
+} from "react-router-dom"; // 路由
 
-
-
-import FenceConfigPage from './pages/FenceConfig';
-import { Content, Header } from 'antd/es/layout/layout';
-import Sider from 'antd/es/layout/Sider';
-import OrderDispatchPage from './pages/FenceConfig/OrderDispatchPage';
-  
+import FenceConfigPage from "./pages/FenceConfig";
+import { Content, Header } from "antd/es/layout/layout";
+import Sider from "antd/es/layout/Sider";
+import OrderDispatchPage from "./pages/OrderDispatch";
+import OrderDetailPage from "./pages/OrderDetail";
 
 // B. Delivery Zone Page (Wrapper for FenceConfig)
 const DeliveryZonePage: React.FC = () => {
@@ -75,7 +86,8 @@ const AppLayout: React.FC = () => {
   // Map paths to menu keys
   const getSelectedKey = () => {
     const path = location.pathname;
-    if (path.startsWith("/DeliveryDispatch")) return "dispatch";
+    if (path.startsWith("/DeliveryDispatch") || path.startsWith("/OrderDetail"))
+      return "dispatch";
     if (path.startsWith("/FenceConfig")) return "fence";
     if (path.startsWith("/dashboard")) return "dashboard";
     return "";
@@ -111,6 +123,8 @@ const AppLayout: React.FC = () => {
 
   const getTitle = () => {
     const key = getSelectedKey();
+    const path = location.pathname;
+    if (path.startsWith("/OrderDetail")) return "订单详情";
     switch (key) {
       case "dashboard":
         return "物流可视化大屏";
@@ -129,6 +143,14 @@ const AppLayout: React.FC = () => {
         collapsible
         collapsed={collapsed}
         onCollapse={(value) => setCollapsed(value)}
+        style={{
+          position: "fixed",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          height: "100vh",
+          overflow: "auto",
+        }}
       >
         <div
           style={{
@@ -155,7 +177,7 @@ const AppLayout: React.FC = () => {
           items={items}
         />
       </Sider>
-      <Layout>
+      <Layout style={{ marginLeft: collapsed ? 80 : 200 }}>
         <Header
           style={{
             padding: 0,
@@ -197,8 +219,8 @@ const App: React.FC = () => {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="DeliveryDispatch" element={<OrderDispatchPage />} />
+          <Route path="OrderDetail/:id" element={<OrderDetailPage />} />
           <Route path="FenceConfig" element={<DeliveryZonePage />} />
-          
         </Route>
       </Routes>
     </BrowserRouter>

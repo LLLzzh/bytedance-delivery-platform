@@ -1,8 +1,8 @@
-// src/pages/DispatchConfirmModal.tsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Modal, Button, Typography, Space, Tag } from "antd";
 import { RocketOutlined, EnvironmentOutlined } from "@ant-design/icons";
 import RouteSelector from "../../components/RouteSelector";
+import { extractPathFromRoute, type Coordinates } from "../../utils/shipping";
 
 const { Text } = Typography;
 
@@ -17,14 +17,13 @@ interface DispatchConfirmModalProps {
   orderNo: string;
   fromAddress: string;
   toAddress: string;
-  distance: string;
-  duration: string;
   open: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (routePath: Coordinates[], ruleId: number) => void;
   startLngLat: [number, number];
   endLngLat: [number, number];
   availableHubs?: Hub[];
+  defaultRuleId?: number;
 }
 
 const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
@@ -37,22 +36,55 @@ const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
   startLngLat,
   endLngLat,
   availableHubs = [],
+  defaultRuleId = 101,
 }) => {
+  const [selectedRoutePath, setSelectedRoutePath] = useState<
+    Coordinates[] | null
+  >(null);
+  const [selectedRuleId] = useState<number>(defaultRuleId);
+
   // 自动匹配中转站逻辑
   const autoSelectedHub = useMemo(() => {
     if (!availableHubs.length) return undefined;
-    // 尝试根据地址匹配：假设 hub.name 包含城市名（如 "杭州"）
     const matched = availableHubs.find((hub) => {
       const cityName = hub.name.substring(0, 2);
       return toAddress.includes(cityName);
     });
-    return matched || availableHubs[0]; // 匹配不到则默认第一个
+    return matched || availableHubs[0];
   }, [toAddress, availableHubs]);
 
-  const waypoints = autoSelectedHub ? [autoSelectedHub.location] : [];
-  const extraTime = autoSelectedHub?.sortingHours
-    ? autoSelectedHub.sortingHours * 3600
-    : 0;
+  // 使用 useMemo 记忆化 waypoints，避免每次渲染创建新数组导致重复请求
+  const waypoints = useMemo(() => {
+    return autoSelectedHub ? [autoSelectedHub.location] : [];
+  }, [autoSelectedHub]);
+  const extraTime = useMemo(() => {
+    return autoSelectedHub?.sortingHours
+      ? autoSelectedHub.sortingHours * 3600
+      : 0;
+  }, [autoSelectedHub]);
+
+  // 处理路线选择
+  const handleRouteSelect = (route: {
+    steps?: Array<{ path?: Array<{ lng: number; lat: number }> }>;
+  }) => {
+    try {
+      const path = extractPathFromRoute(route);
+      setSelectedRoutePath(path);
+    } catch (error) {
+      console.error("路线解析失败:", error);
+    }
+  };
+
+  // 确认发货
+  const handleConfirm = () => {
+    // 如果没有选择路线，使用默认路径（起点+终点）
+    const finalPath: Coordinates[] = selectedRoutePath || [
+      startLngLat,
+      endLngLat,
+    ];
+
+    onConfirm(finalPath, selectedRuleId);
+  };
 
   return (
     <Modal
@@ -67,7 +99,7 @@ const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
           key="confirm"
           type="primary"
           icon={<RocketOutlined />}
-          onClick={onConfirm}
+          onClick={handleConfirm}
           style={{ backgroundColor: "#1890ff", borderColor: "#1890ff" }}
         >
           确认发货
@@ -90,20 +122,20 @@ const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
             <Text style={{ marginLeft: 8 }}>{toAddress}</Text>
           </div>
 
-          {/* 中转站信息 (自动匹配) */}
-          <div
-            style={{
-              background: "#f9f9f9",
-              padding: 12,
-              borderRadius: 6,
-              border: "1px solid #eee",
-            }}
-          >
-            <Space direction="vertical" style={{ width: "100%" }}>
-              <Text strong>
-                <EnvironmentOutlined /> 经由中转站点 (系统自动分配):
-              </Text>
-              {autoSelectedHub ? (
+          {/* 中转站信息 */}
+          {autoSelectedHub && (
+            <div
+              style={{
+                background: "#f9f9f9",
+                padding: 12,
+                borderRadius: 6,
+                border: "1px solid #eee",
+              }}
+            >
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Text strong>
+                  <EnvironmentOutlined /> 经由中转站点 (系统自动分配):
+                </Text>
                 <div>
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -123,15 +155,13 @@ const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
                           ? toAddress.substring(0, 10) + "..."
                           : toAddress}
                       </Text>
-                      ， 系统已自动规划经由该城市分拨中心进行中转。
+                      ，系统已自动规划经由该城市分拨中心进行中转。
                     </Text>
                   </div>
                 </div>
-              ) : (
-                <Text type="warning">未找到匹配的中转站</Text>
-              )}
-            </Space>
-          </div>
+              </Space>
+            </div>
+          )}
 
           {/* 提示信息 */}
           <div
@@ -150,7 +180,7 @@ const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
             </Text>
           </div>
 
-          {/* 路线选择器 (Inline Mode) */}
+          {/* 路线选择器 */}
           <div
             style={{
               marginTop: 8,
@@ -165,6 +195,7 @@ const DispatchConfirmModal: React.FC<DispatchConfirmModalProps> = ({
               endLngLat={endLngLat}
               waypoints={waypoints}
               extraTime={extraTime}
+              onConfirm={handleRouteSelect}
             />
           </div>
         </div>

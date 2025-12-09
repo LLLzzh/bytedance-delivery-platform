@@ -117,3 +117,13 @@ export interface OrderRow {
 export interface CountRow {
   count: string;
 }
+
+/**
+ * 订单统计信息
+ */
+export interface OrderStatistics {
+  pendingCount: number; // 待发货订单数
+  shippingCount: number; // 运输中订单数
+  completedCount: number; // 已完成订单数
+  totalGMV: number; // 总交易额 (GMV)
+}
