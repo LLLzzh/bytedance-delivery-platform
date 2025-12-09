@@ -116,8 +116,15 @@ export class WebSocketManager {
 
   /**
    * 推送位置更新到所有订阅该订单的客户端
+   * @param orderId 订单ID
+   * @param position 位置坐标
+   * @param sequence 序列号，用于确保轨迹点按顺序处理
    */
-  broadcastPositionUpdate(orderId: string, position: Coordinates): void {
+  broadcastPositionUpdate(
+    orderId: string,
+    position: Coordinates,
+    sequence?: number
+  ): void {
     const connections = this.connections.get(orderId);
     if (!connections || connections.size === 0) {
       return;
@@ -127,6 +134,7 @@ export class WebSocketManager {
       type: "position_update",
       orderId,
       coordinates: position,
+      sequence, // 添加序列号
       timestamp: new Date().toISOString(),
     });
 

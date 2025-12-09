@@ -10,6 +10,8 @@ import { WebSocketManager } from "./websocket-manager.js";
  */
 export class LocationReceiver {
   private websocketManager: WebSocketManager;
+  // 为每个订单维护序列号，确保轨迹点按顺序推送
+  private sequenceNumbers: Map<string, number> = new Map();
 
   constructor(websocketManager: WebSocketManager) {
     this.websocketManager = websocketManager;
@@ -54,8 +56,13 @@ export class LocationReceiver {
         order.recipient_coords_geojson
       );
 
-      // 通过 WebSocket 推送位置更新
-      this.websocketManager.broadcastPositionUpdate(orderId, coords);
+      // 获取并递增序列号
+      const currentSeq = this.sequenceNumbers.get(orderId) || 0;
+      const nextSeq = currentSeq + 1;
+      this.sequenceNumbers.set(orderId, nextSeq);
+
+      // 通过 WebSocket 推送位置更新（带序列号）
+      this.websocketManager.broadcastPositionUpdate(orderId, coords, nextSeq);
 
       if (isArrived) {
         return {
