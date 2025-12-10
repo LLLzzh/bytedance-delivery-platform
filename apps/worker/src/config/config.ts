@@ -25,9 +25,9 @@ export const config = {
     process.env.POSITION_UPDATE_INTERVAL || "1000",
     10
   ),
-  // 异常检测间隔（毫秒），默认 30 秒
+  // 异常检测间隔（毫秒），默认 10 秒（更频繁的检测）
   anomalyCheckInterval: parseInt(
-    process.env.ANOMALY_CHECK_INTERVAL || "30000",
+    process.env.ANOMALY_CHECK_INTERVAL || "10000",
     10
   ),
   // 到达阈值（米），默认 100 米

@@ -1,9 +1,19 @@
 import React, { useState } from "react";
-import { Modal, Form, Input, InputNumber, Button, message, Space } from "antd";
+import {
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Button,
+  message,
+  Space,
+  Select,
+} from "antd";
 import {
   orderService,
   CreateOrderRequest,
   Coordinates,
+  AnomalyType,
 } from "../services/order";
 import { AddressPicker } from "./AddressPicker";
 
@@ -49,6 +59,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
     recipientName: string;
     recipientAddress: string;
     amount: number;
+    anomalyType?: AnomalyType;
   }) => {
     // 验证是否已选择地址
     if (!selectedCoords) {
@@ -71,6 +82,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
         recipientName: values.recipientName,
         recipientAddress: selectedAddress,
         recipientCoords: selectedCoords,
+        anomalyType: values.anomalyType || AnomalyType.None,
       };
 
       const result = await orderService.createOrder(createData);
@@ -198,6 +210,26 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
             min={0.01}
             step={0.01}
           />
+        </Form.Item>
+
+        <Form.Item
+          name="anomalyType"
+          label="异常订单类型（测试用）"
+          tooltip="选择异常类型以测试异常检测功能"
+          initialValue={AnomalyType.None}
+        >
+          <Select placeholder="请选择异常类型（默认：正常订单）">
+            <Select.Option value={AnomalyType.None}>正常订单</Select.Option>
+            <Select.Option value={AnomalyType.RouteDeviation}>
+              轨迹偏移
+            </Select.Option>
+            <Select.Option value={AnomalyType.LongTimeStopped}>
+              长时间轨迹不动
+            </Select.Option>
+            <Select.Option value={AnomalyType.LongTimeNoUpdate}>
+              长时间状态未更新
+            </Select.Option>
+          </Select>
         </Form.Item>
 
         <Form.Item style={{ marginBottom: 0, marginTop: 24 }}>
