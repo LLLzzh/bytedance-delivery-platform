@@ -5,6 +5,7 @@ import { config } from "./config/config.js";
 import { WebSocketManager } from "./services/websocket-manager.js";
 import { AnomalyDetector } from "./services/anomaly-detector.js";
 import { LocationReceiver } from "./services/location-receiver.js";
+import { MQConsumer } from "./services/mq-consumer.js";
 import { Coordinates } from "./shared/geo.types.js";
 
 // 创建 Fastify 实例
@@ -19,6 +20,14 @@ await fastify.register(websocket);
 const websocketManager = new WebSocketManager(fastify);
 const locationReceiver = new LocationReceiver(websocketManager);
 const anomalyDetector = new AnomalyDetector();
+const mqConsumer = new MQConsumer(locationReceiver);
+
+// 设置 WebSocket 连接回调，通知 LocationReceiver
+websocketManager.setConnectionCallback({
+  onConnected: (orderId) => locationReceiver.notifyFrontendConnected(orderId),
+  onDisconnected: (orderId) =>
+    locationReceiver.notifyFrontendDisconnected(orderId),
+});
 
 // 注册 WebSocket 路由
 websocketManager.registerRoutes();
@@ -39,7 +48,8 @@ fastify.get("/stats", async () => {
   };
 });
 
-// 接收位置推送的 API 接口（由 mock 物流端调用）
+// 注意：位置推送现在通过 MQ 消费，不再使用 HTTP 接口
+// 保留此接口用于兼容性或测试目的（可选）
 fastify.post("/api/v1/location/update", async (request, reply) => {
   try {
     const body = request.body as {
@@ -120,6 +130,9 @@ const start = async () => {
     // 启动异常检测器
     anomalyDetector.start();
 
+    // 启动 MQ 消费者（从队列消费位置更新）
+    mqConsumer.start();
+
     // 启动 HTTP/WebSocket 服务器
     await fastify.listen({ port: config.port, host: "0.0.0.0" });
     fastify.log.info(`Worker service listening on port ${config.port}`);
@@ -134,6 +147,9 @@ const shutdown = async () => {
   console.log("[Worker] Shutting down...");
 
   anomalyDetector.stop();
+
+  // 停止 MQ 消费者
+  await mqConsumer.close();
 
   // 关闭 Fastify 服务器
   await fastify.close();

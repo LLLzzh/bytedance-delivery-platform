@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: kartoza/postgis:latest
@@ -17,6 +15,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: my-turborepo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   api:
     build:
@@ -67,4 +79,5 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
 

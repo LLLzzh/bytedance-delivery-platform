@@ -10,6 +10,10 @@ import { WebSocketManager } from "./websocket-manager.js";
  */
 export class LocationReceiver {
   private websocketManager: WebSocketManager;
+  // 为每个订单维护序列号，确保轨迹点按顺序推送
+  private sequenceNumbers: Map<string, number> = new Map();
+  // 记录哪些订单有前端连接
+  private ordersWithFrontendConnection: Set<string> = new Set();
 
   constructor(websocketManager: WebSocketManager) {
     this.websocketManager = websocketManager;
@@ -54,8 +58,16 @@ export class LocationReceiver {
         order.recipient_coords_geojson
       );
 
-      // 通过 WebSocket 推送位置更新
-      this.websocketManager.broadcastPositionUpdate(orderId, coords);
+      // 获取并递增序列号
+      const currentSeq = this.sequenceNumbers.get(orderId) || 0;
+      const nextSeq = currentSeq + 1;
+      this.sequenceNumbers.set(orderId, nextSeq);
+
+      // 只有有前端连接时才通过 WebSocket 推送
+      // 如果没有连接，只更新数据库，不推送（降低开销）
+      if (this.ordersWithFrontendConnection.has(orderId)) {
+        this.websocketManager.broadcastPositionUpdate(orderId, coords, nextSeq);
+      }
 
       if (isArrived) {
         return {
@@ -201,5 +213,41 @@ export class LocationReceiver {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
+  }
+
+  /**
+   * 通知有前端连接（由 WebSocketManager 调用）
+   * @param orderId 订单ID
+   */
+  notifyFrontendConnected(orderId: string): void {
+    // 如果已经有连接，不需要重复添加
+    if (this.ordersWithFrontendConnection.has(orderId)) {
+      return;
+    }
+
+    this.ordersWithFrontendConnection.add(orderId);
+    console.log(
+      `[LocationReceiver] Frontend connected for order ${orderId}, will push location updates via WebSocket`
+    );
+  }
+
+  /**
+   * 通知前端断开连接（由 WebSocketManager 调用）
+   * @param orderId 订单ID
+   */
+  notifyFrontendDisconnected(orderId: string): void {
+    this.ordersWithFrontendConnection.delete(orderId);
+    console.log(
+      `[LocationReceiver] Frontend disconnected for order ${orderId}, will only update database`
+    );
+  }
+
+  /**
+   * 检查订单是否有前端连接
+   * @param orderId 订单ID
+   * @returns 是否有前端连接
+   */
+  hasFrontendConnection(orderId: string): boolean {
+    return this.ordersWithFrontendConnection.has(orderId);
   }
 }
