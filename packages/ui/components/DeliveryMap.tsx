@@ -435,7 +435,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
           position: markerPosition,
           content: `
             <div style="display: flex; justify-content: center; align-items: center;">
-              <img src="${riderIconUrl}" style="width: 32px; height: 32px; display: block;" />
+              <img src="${riderIconUrl}" style="width: 48px; height: 48px; display: block;" />
             </div>
           `,
           offset: new AMap.Pixel(0, 0),
