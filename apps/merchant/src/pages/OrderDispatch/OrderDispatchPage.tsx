@@ -17,15 +17,11 @@ import {
   TableProps,
 } from "antd";
 import { SearchOutlined, TruckOutlined } from "@ant-design/icons";
-import {
-  orderService,
-  type Order,
-  type OrderStatus,
-} from "../../services/order";
+import { orderService, type Order } from "../../services/order";
 import { prepareShippingData } from "../../utils/shipping";
 
 // =============== 类型定义 ===============
-type StatusType = "pending" | "shipping" | "completed";
+type StatusType = "pending" | "shipping" | "delivered" | "abnormal";
 
 // 导入发货确认弹窗
 import DispatchConfirmModal from "./DispatchConfirmModal";
@@ -65,7 +61,8 @@ interface FormValues {
 const statusMap: Record<StatusType, { label: string; color: string }> = {
   pending: { label: "待发货", color: "orange" },
   shipping: { label: "运输中", color: "blue" },
-  completed: { label: "已完成", color: "green" },
+  delivered: { label: "已完成", color: "green" },
+  abnormal: { label: "异常", color: "red" },
 };
 
 // =============== 样式常量 ===============
@@ -88,11 +85,13 @@ const styles = {
   datePicker: { width: "100%" },
 } as const;
 
-const mapBackendStatus = (status: OrderStatus): StatusType => {
+const mapBackendStatus = (order: Order): StatusType => {
+  const status = order.status;
+  if (status === "abnormal") return "abnormal";
   if (status === "pending") return "pending";
   if (status === "shipping" || status === "pickedUp" || status === "arrived")
     return "shipping";
-  if (status === "delivered") return "completed";
+  if (status === "delivered") return "delivered";
   return "pending";
 };
 
@@ -231,14 +230,14 @@ function OrderDispatchPage() {
       value: "—",
       color: "#f0f9ff",
       textColor: "#52c41a",
-      status: "completed" as StatusType,
+      status: "delivered" as StatusType,
     },
     {
-      label: "总交易额 (GMV)",
-      value: "¥—",
-      color: "#f5f5f5",
-      textColor: "#000",
-      status: null,
+      label: "异常订单",
+      value: "—",
+      color: "#fff1f0",
+      textColor: "#cf1322",
+      status: "abnormal" as StatusType,
     },
   ]);
 
@@ -312,14 +311,14 @@ function OrderDispatchPage() {
           value: String(statistics.completedCount),
           color: "#f0f9ff",
           textColor: "#52c41a",
-          status: "completed" as StatusType,
+          status: "delivered" as StatusType,
         },
         {
-          label: "总交易额 (GMV)",
-          value: `¥${statistics.totalGMV.toFixed(2)}`,
-          color: "#f5f5f5",
-          textColor: "#000",
-          status: null,
+          label: "异常订单",
+          value: "待返回",
+          color: "#fff1f0",
+          textColor: "#cf1322",
+          status: "abnormal" as StatusType,
         },
       ]);
     } catch (error) {
@@ -352,7 +351,7 @@ function OrderDispatchPage() {
         receiver: order.recipientName,
         address: order.recipientAddress,
         amount: order.amount,
-        status: mapBackendStatus(order.status),
+        status: mapBackendStatus(order),
         createTime: formatTime(order.createTime),
         startLngLat: order.routePath?.[0] as [number, number] | undefined,
         endLngLat: order.recipientCoords as [number, number],
@@ -427,6 +426,9 @@ function OrderDispatchPage() {
   // =============== 发货操作 ===============
   const handleDispatchClick = (record: OrderItem) => {
     setCurrentOrder(record);
+    console.log("准备发货订单：", record.orderNo);
+    console.log("收货开始位置", record.startLngLat);
+    console.log("收货结束位置", record.endLngLat);
     setVisible(true);
   };
 
@@ -483,9 +485,10 @@ function OrderDispatchPage() {
       title: "收件人",
       dataIndex: "receiver",
       key: "receiver",
+      width: 100,
     },
     {
-      title: "收货地址 (悬浮查看完整)",
+      title: "收货地址",
       dataIndex: "address",
       key: "address",
       render: (text: string) => (
@@ -493,6 +496,7 @@ function OrderDispatchPage() {
           <span>{text}</span>
         </Tooltip>
       ),
+      ellipsis: true,
     },
     {
       title: "金额",
@@ -501,6 +505,7 @@ function OrderDispatchPage() {
       render: (value: number) => `¥${value.toFixed(2)}`,
       sorter: true,
       columnKey: "amount", // 用于排序识别
+      width: 100,
     },
     {
       title: "状态",
@@ -509,6 +514,7 @@ function OrderDispatchPage() {
       render: (status: StatusType) => (
         <Tag color={statusMap[status].color}>{statusMap[status].label}</Tag>
       ),
+      width: 100,
     },
     {
       title: "操作",
@@ -528,6 +534,7 @@ function OrderDispatchPage() {
           )}
         </Space>
       ),
+      width: 200,
     },
   ];
 
@@ -550,6 +557,16 @@ function OrderDispatchPage() {
               onClick={() => {
                 if (item.status) {
                   setSelectedStatus(item.status);
+                  form.setFieldsValue({ status: item.status });
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  const values = form.getFieldsValue();
+                  values.status = item.status;
+                  const params = buildQueryParams(
+                    values,
+                    1,
+                    pagination.pageSize
+                  );
+                  fetchOrders(params);
                 }
               }}
             >
@@ -587,6 +604,7 @@ function OrderDispatchPage() {
                   <Select.Option value="pending">待发货</Select.Option>
                   <Select.Option value="shipping">运输中</Select.Option>
                   <Select.Option value="delivered">已完成</Select.Option>
+                  <Select.Option value="abnormal">异常订单</Select.Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -643,7 +661,7 @@ function OrderDispatchPage() {
           orderNo={currentOrder.orderNo}
           fromAddress="浙江省杭州市余杭区菜鸟物流园A区"
           toAddress={currentOrder.address}
-          startLngLat={currentOrder.startLngLat || [116.397428, 39.90923]}
+          startLngLat={currentOrder.startLngLat || [120.301663, 30.297455]}
           endLngLat={currentOrder.endLngLat || [116.417428, 39.92923]}
           availableHubs={TRANSIT_HUBS}
           defaultRuleId={101}

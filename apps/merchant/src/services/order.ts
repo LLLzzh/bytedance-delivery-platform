@@ -6,7 +6,8 @@ export type OrderStatus =
   | "shipping"
   | "arrived"
   | "delivered"
-  | "cancelled";
+  | "cancelled"
+  | "abnormal";
 
 export type Coordinates = [number, number];
 

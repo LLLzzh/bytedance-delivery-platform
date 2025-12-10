@@ -65,7 +65,7 @@ const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(
       onDrawComplete,
       onEditComplete,
       setDrawingType,
-      center = [116.397428, 39.90923], // 默认中心点为北京
+      center = [120.301663, 30.287455],
       existingFences = [],
       onSelectFence,
     },
