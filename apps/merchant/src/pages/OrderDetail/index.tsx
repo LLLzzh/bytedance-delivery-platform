@@ -132,10 +132,10 @@ const OrderDetailPage: React.FC = () => {
       <div style={{ marginBottom: 12, alignSelf: "flex-start" }}>
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate("/DeliveryDispatch")}
+          onClick={() => navigate(-1)}
           size="small"
         >
-          返回订单列表
+          返回
         </Button>
       </div>
 

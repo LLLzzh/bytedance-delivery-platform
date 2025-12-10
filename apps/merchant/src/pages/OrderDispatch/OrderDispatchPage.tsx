@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
   Row,
@@ -49,6 +49,7 @@ interface QueryParams {
   endTime?: string;
   sortBy?: string;
   sortDirection?: "ASC" | "DESC";
+  isAbnormal?: boolean;
 }
 
 interface FormValues {
@@ -202,6 +203,7 @@ const TRANSIT_HUBS = [
 // =============== 主组件 ===============
 function OrderDispatchPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [form] = Form.useForm();
   const [visible, setVisible] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<OrderItem | null>(null);
@@ -254,8 +256,15 @@ function OrderDispatchPage() {
     };
 
     if (values.status) {
-      params.status = values.status;
+      if (values.status === "shipping") {
+        params.status = "pickedUp,shipping,arrived";
+      } else if (values.status === "abnormal") {
+        params.isAbnormal = true;
+      } else {
+        params.status = values.status;
+      }
     }
+
     if (values.orderNo?.trim()) {
       params.searchQuery = values.orderNo.trim();
     }
@@ -343,6 +352,7 @@ function OrderDispatchPage() {
           | "status"
           | "recipientName",
         sortDirection: params.sortDirection,
+        isAbnormal: params.isAbnormal,
       });
 
       const orders: OrderItem[] = result.orders.map((order: Order) => ({
@@ -367,23 +377,75 @@ function OrderDispatchPage() {
     }
   };
 
+  // =============== URL 参数同步 ===============
+  const updateUrlParams = (
+    values: FormValues,
+    page: number,
+    pageSize: number
+  ) => {
+    const params: Record<string, string> = {};
+    params.page = String(page);
+    params.pageSize = String(pageSize);
+
+    if (values.status) params.status = values.status;
+    if (values.orderNo) params.orderNo = values.orderNo;
+
+    setSearchParams(params);
+  };
+
   // =============== 初始加载 ===============
   useEffect(() => {
-    // 同时获取订单列表和统计数据
-    fetchOrders(buildQueryParams({}, 1, 10));
+    // 从 URL 恢复状态
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "10");
+    const status = searchParams.get("status") || undefined;
+    const orderNo = searchParams.get("orderNo") || undefined;
+
+    // 恢复表单
+    form.setFieldsValue({
+      status,
+      orderNo,
+    });
+
+    // 恢复分页
+    setPagination({ current: page, pageSize });
+
+    // 恢复选中状态 (用于高亮卡片)
+    if (
+      status &&
+      ["pending", "shipping", "delivered", "abnormal"].includes(status)
+    ) {
+      setSelectedStatus(status as StatusType);
+    } else {
+      setSelectedStatus(null);
+    }
+
+    // 构建查询参数并请求
+    const values: FormValues = { status, orderNo };
+    const params = buildQueryParams(values, page, pageSize);
+
+    fetchOrders(params);
     fetchStatistics();
   }, []);
 
   // =============== 表单提交 ===============
   function onFinish(values: FormValues) {
-    setPagination({ current: 1, pageSize: 10 });
-    const params = buildQueryParams(values, 1, 10);
+    const page = 1;
+    const pageSize = 10;
+    setPagination({ current: page, pageSize });
+
+    // 同步到 URL
+    updateUrlParams(values, page, pageSize);
+
+    const params = buildQueryParams(values, page, pageSize);
     fetchOrders(params);
   }
 
   const handleReset = () => {
     form.resetFields();
     setPagination({ current: 1, pageSize: 10 });
+    setSelectedStatus(null);
+    setSearchParams({});
     fetchOrders(buildQueryParams({}, 1, 10));
   };
 
@@ -398,6 +460,9 @@ function OrderDispatchPage() {
     setPagination({ current: page, pageSize });
 
     const values = form.getFieldsValue();
+
+    // 同步到 URL
+    updateUrlParams(values, page, pageSize);
 
     let sortBy: string | undefined;
     let sortDirection: "ASC" | "DESC" | undefined;
@@ -561,6 +626,10 @@ function OrderDispatchPage() {
                   setPagination((prev) => ({ ...prev, current: 1 }));
                   const values = form.getFieldsValue();
                   values.status = item.status;
+
+                  // 同步到 URL
+                  updateUrlParams(values, 1, pagination.pageSize);
+
                   const params = buildQueryParams(
                     values,
                     1,

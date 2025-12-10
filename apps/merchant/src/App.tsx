@@ -167,7 +167,7 @@ const App: React.FC = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="/DeliveryDispatch" replace />} />
           <Route path="DeliveryDispatch" element={<OrderDispatchPage />} />
           <Route path="OrderDetail/:id" element={<OrderDetailPage />} />
           <Route path="FenceConfig" element={<DeliveryZonePage />} />
