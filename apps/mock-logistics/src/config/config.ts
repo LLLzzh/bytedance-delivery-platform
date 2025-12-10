@@ -11,8 +11,14 @@ export const config = {
     user: process.env.DB_USER || "postgres",
     password: process.env.DB_PASSWORD || "postgres",
   },
-  // Worker 服务的地址（接收位置推送）
-  workerUrl: process.env.WORKER_URL || "http://localhost:3006",
+  // Redis 配置（用于 MQ）
+  redis: {
+    host: process.env.REDIS_HOST || "localhost",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+  },
+  // MQ 队列名称
+  mqQueueName: process.env.MQ_QUEUE_NAME || "location-updates",
   // 位置推送间隔（毫秒），默认 1 秒
   positionUpdateInterval: parseInt(
     process.env.POSITION_UPDATE_INTERVAL || "1000",

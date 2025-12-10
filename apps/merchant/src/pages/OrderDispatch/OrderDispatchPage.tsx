@@ -70,8 +70,8 @@ const statusMap: Record<StatusType, { label: string; color: string }> = {
 
 // =============== 样式常量 ===============
 const styles = {
-  pageContainer: { padding: 24 },
-  statsRow: { marginBottom: 24 },
+  pageContainer: { padding: 16 },
+  statsRow: { marginBottom: 16 },
   statCard: {
     base: {
       border: "none",
@@ -79,12 +79,12 @@ const styles = {
       boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
       transition: "transform 0.2s",
     },
-    body: { padding: 16 },
-    label: { fontSize: 14, color: "#666", marginBottom: 8 },
-    value: { fontSize: 24, fontWeight: "bold" as const },
+    body: { padding: 12 },
+    label: { fontSize: 13, color: "#666", marginBottom: 6 },
+    value: { fontSize: 22, fontWeight: "bold" as const },
   },
-  searchCard: { marginBottom: 24 },
-  formActions: { marginTop: 16 },
+  searchCard: { marginBottom: 16 },
+  formActions: { marginTop: 12 },
   datePicker: { width: "100%" },
 } as const;
 
@@ -137,6 +137,66 @@ const TRANSIT_HUBS = [
     name: "南京新街口中转站",
     location: [118.78, 32.05] as [number, number],
     sortingHours: 3,
+  },
+  {
+    id: "h6",
+    name: "广州天河中转站",
+    location: [113.3311, 23.1375] as [number, number],
+    sortingHours: 2.5,
+  },
+  {
+    id: "h7",
+    name: "成都春熙路中转站",
+    location: [104.0815, 30.6624] as [number, number],
+    sortingHours: 3,
+  },
+  {
+    id: "h8",
+    name: "武汉光谷中转站",
+    location: [114.4024, 30.5064] as [number, number],
+    sortingHours: 2.5,
+  },
+  {
+    id: "h9",
+    name: "西安钟楼中转站",
+    location: [108.9398, 34.3416] as [number, number],
+    sortingHours: 3.5,
+  },
+  {
+    id: "h10",
+    name: "天津滨海中转站",
+    location: [117.2008, 39.0842] as [number, number],
+    sortingHours: 3,
+  },
+  {
+    id: "h11",
+    name: "苏州工业园区中转站",
+    location: [120.6663, 31.3089] as [number, number],
+    sortingHours: 2,
+  },
+  {
+    id: "h12",
+    name: "重庆解放碑中转站",
+    location: [106.5708, 29.563] as [number, number],
+    sortingHours: 3,
+  },
+  {
+    id: "h13",
+    name: "青岛五四广场中转站",
+    location: [120.3826, 36.0671] as [number, number],
+    sortingHours: 2.5,
+  },
+  {
+    id: "h14",
+    name: "大连星海广场中转站",
+    location: [121.5935, 38.886] as [number, number],
+    sortingHours: 3,
+  },
+  {
+    id: "h15",
+    name: "郑州二七广场中转站",
+    location: [113.6654, 34.7579] as [number, number],
+    sortingHours: 2.5,
   },
 ];
 
@@ -381,7 +441,7 @@ function OrderDispatchPage() {
       const shippingData = prepareShippingData(routePath, ruleId);
       await orderService.shipOrder(currentOrder.orderNo, shippingData);
 
-      message.success(`✅ 已成功发货订单：${currentOrder.orderNo}`);
+      message.success(` 已成功发货订单：${currentOrder.orderNo}`);
       setVisible(false);
       setCurrentOrder(null);
 
@@ -417,7 +477,7 @@ function OrderDispatchPage() {
       title: "订单创建时间",
       dataIndex: "createTime",
       key: "createTime",
-      width: 160,
+      width: 150,
     },
     {
       title: "收件人",
@@ -475,7 +535,7 @@ function OrderDispatchPage() {
   return (
     <div style={styles.pageContainer}>
       {/* 统计卡片 */}
-      <Row gutter={[16, 16]} style={styles.statsRow}>
+      <Row gutter={[12, 12]} style={styles.statsRow}>
         {dynamicStats.map((item, index) => (
           <Col key={index} span={6}>
             <Card
@@ -508,9 +568,13 @@ function OrderDispatchPage() {
       </Row>
 
       {/* 搜索表单 */}
-      <Card title="搜索订单" style={styles.searchCard}>
+      <Card
+        title="搜索订单"
+        style={styles.searchCard}
+        bodyStyle={{ padding: 16 }}
+      >
         <Form form={form} layout="vertical" colon={false} onFinish={onFinish}>
-          <Row gutter={16}>
+          <Row gutter={12}>
             <Col span={6}>
               <Form.Item label="关键词（订单/收件人/地址）" name="orderNo">
                 <Input placeholder="输入关键词" />
@@ -551,18 +615,20 @@ function OrderDispatchPage() {
       </Card>
 
       {/* 订单表格 */}
-      <Card title="订单列表">
+      <Card title="订单列表" bodyStyle={{ padding: 16 }}>
         <Table
           dataSource={orders}
           columns={columns}
           rowKey="key"
           loading={loading}
+          size="small"
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
             total,
             showSizeChanger: true,
             pageSizeOptions: ["10", "20", "50"],
+            size: "small",
           }}
           onChange={handleTableChange}
         />

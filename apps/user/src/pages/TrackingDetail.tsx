@@ -842,7 +842,7 @@ const TrackingDetail: React.FC = () => {
             <Empty description="未找到订单信息" />
           ) : (
             <Card
-              bordered={false}
+              variant="outlined"
               style={{
                 boxShadow: "none",
                 background: "#fff",

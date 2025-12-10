@@ -40,7 +40,7 @@ const start = async () => {
 // 优雅关闭
 const shutdown = async () => {
   console.log("[MockLogistics] Shutting down...");
-  deliverySimulator.stop();
+  await deliverySimulator.stop();
   await app.close();
   process.exit(0);
 };

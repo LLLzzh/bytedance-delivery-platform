@@ -169,7 +169,8 @@ export const orderService = {
       message: string;
       data: { order: Order };
     }>(`/api/v1/orders/${orderId}/deliver`);
-    return (response.data ?? response) as {
+    // extractData 已经返回完整的 ApiResponse（包含 success 字段），直接返回 response
+    return response as unknown as {
       success: boolean;
       message: string;
       data: { order: Order };

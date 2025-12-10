@@ -6,7 +6,7 @@ import {
   MockDeliveryOrder,
 } from "../types/order.types.js";
 import { config } from "../config/config.js";
-import fetch from "node-fetch";
+import { MQPublisher } from "./mq-publisher.js";
 
 /**
  * 根据 ruleId 获取推送间隔（毫秒）
@@ -30,12 +30,18 @@ function getIntervalByRuleId(ruleId: number): number {
  *
  * 推送策略：
  * - 持续推送所有路径点，按 ruleId 确定的间隔推送
+ * - 通过 MQ（Redis）推送位置更新，实现服务解耦
  * - Worker 服务会根据是否有前端连接决定是否通过 WebSocket 推送
  */
 export class DeliverySimulator {
   private activeDeliveries: Map<string, MockDeliveryOrder> = new Map();
   private deliveryTimers: Map<string, NodeJS.Timeout> = new Map();
   private reloadInterval: NodeJS.Timeout | null = null;
+  private mqPublisher: MQPublisher;
+
+  constructor() {
+    this.mqPublisher = new MQPublisher();
+  }
 
   /**
    * 从数据库加载所有 shipping 状态的订单
@@ -224,7 +230,7 @@ export class DeliverySimulator {
   }
 
   /**
-   * 推送位置到 worker 服务
+   * 推送位置到 worker 服务（通过 MQ）
    * @param orderId 订单ID
    * @param coords 位置坐标
    * @param merchantId 商家ID
@@ -235,47 +241,8 @@ export class DeliverySimulator {
     merchantId: string
   ): Promise<void> {
     try {
-      const response = await fetch(
-        `${config.workerUrl}/api/v1/location/update`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            orderId,
-            coordinates: coords,
-            merchantId,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        const errorData = JSON.parse(errorText);
-
-        // 如果订单已经到达，停止该订单的模拟
-        if (errorData.error && errorData.error.includes("already arrived")) {
-          console.log(
-            `[DeliverySimulator] Order ${orderId} has already arrived, stopping simulation`
-          );
-          this.stopDelivery(orderId);
-          return;
-        }
-
-        // 如果订单状态不是 shipping，停止模拟
-        if (errorData.error && errorData.error.includes("not shipping")) {
-          console.log(
-            `[DeliverySimulator] Order ${orderId} status changed, stopping simulation`
-          );
-          this.stopDelivery(orderId);
-          return;
-        }
-
-        console.error(
-          `[DeliverySimulator] Failed to push location for order ${orderId}: ${response.status} ${errorText}`
-        );
-      }
+      // 通过 MQ 发布位置更新消息
+      await this.mqPublisher.publishLocationUpdate(orderId, coords, merchantId);
     } catch (error) {
       console.error(
         `[DeliverySimulator] Error pushing location for order ${orderId}:`,
@@ -320,7 +287,7 @@ export class DeliverySimulator {
   /**
    * 停止服务
    */
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.reloadInterval) {
       clearInterval(this.reloadInterval);
       this.reloadInterval = null;
@@ -330,6 +297,9 @@ export class DeliverySimulator {
     for (const orderId of this.deliveryTimers.keys()) {
       this.stopDelivery(orderId);
     }
+
+    // 关闭 MQ 发布者连接
+    await this.mqPublisher.close();
 
     console.log("[DeliverySimulator] Stopped");
   }

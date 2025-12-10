@@ -117,7 +117,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
       onCancel={handleCancel}
       footer={null}
       width={700}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         form={form}

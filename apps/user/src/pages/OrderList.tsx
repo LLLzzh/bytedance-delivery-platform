@@ -22,6 +22,7 @@ import {
   PlusOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
+import { PullToRefresh } from "antd-mobile";
 import { useNavigate } from "react-router-dom";
 import { orderService, Order, OrderStatus } from "../services/order";
 import CreateOrderModal from "../components/CreateOrderModal";
@@ -227,6 +228,41 @@ const OrderList: React.FC = () => {
     loadOrders(1, false);
   };
 
+  // 下拉刷新处理
+  const handleRefresh = useCallback(async () => {
+    try {
+      const status = getStatusByTab(activeTab);
+      const result = await orderService.getOrders({
+        page: 1,
+        pageSize: PAGE_SIZE,
+        status: status,
+        searchQuery: searchText || undefined,
+        sortBy: filterOptions.sortBy,
+        sortDirection: filterOptions.sortDirection,
+      });
+
+      if (result.success) {
+        const newOrders = result.orders || [];
+        setOrders(newOrders);
+        setPagination({
+          current: 1,
+          pageSize: PAGE_SIZE,
+          total: result.totalCount || 0,
+          hasMore:
+            newOrders.length === PAGE_SIZE &&
+            (result.totalCount || 0) > PAGE_SIZE,
+        });
+        message.success("刷新成功");
+      } else {
+        message.error("刷新失败");
+      }
+    } catch (error) {
+      console.error("Failed to refresh orders:", error);
+      message.error("刷新失败，请稍后重试");
+      throw error; // 抛出错误以便 PullToRefresh 知道刷新失败
+    }
+  }, [activeTab, searchText, filterOptions]);
+
   // 三个点菜单项
   const moreMenuItems: MenuProps["items"] = [
     {
@@ -355,228 +391,247 @@ const OrderList: React.FC = () => {
         />
       </div>
 
-      {/* 订单列表内容 - 可滚动，支持虚拟列表 */}
+      {/* 订单列表内容 - 可滚动，支持虚拟列表和下拉刷新 */}
       <Content
         ref={scrollContainerRef}
         style={{
           flex: 1,
           overflowY: "auto",
           background: "#f5f5f5",
+          position: "relative",
         }}
       >
-        <Spin spinning={loading && orders.length === 0}>
-          {loading && orders.length === 0 ? (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                minHeight: "400px",
-              }}
-            >
-              <Spin size="large" />
-            </div>
-          ) : orders.length === 0 ? (
-            <Empty
-              description={searchText ? "未找到匹配的订单" : "暂无订单"}
-              style={{ marginTop: "100px" }}
-            />
-          ) : (
-            <>
-              <div style={{ background: "#f5f5f5" }}>
-                {orders.map((item: Order) => {
-                  const statusInfo = getStatusInfo(item.status);
-                  return (
-                    <div
-                      key={item.id}
-                      style={{
-                        padding: 0,
-                        marginBottom: "8px",
-                        background: "#fff",
-                        borderBottom: "1px solid #f0f0f0",
-                      }}
-                    >
-                      <div style={{ width: "100%", padding: "12px" }}>
-                        {/* 店铺名称和状态 */}
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: "12px",
-                            paddingBottom: "8px",
-                            borderBottom: "1px solid #f0f0f0",
-                          }}
-                        >
+        <PullToRefresh
+          onRefresh={handleRefresh}
+          renderText={(status) => {
+            switch (status) {
+              case "pulling":
+                return "下拉刷新";
+              case "canRelease":
+                return "松开刷新";
+              case "refreshing":
+                return "正在刷新...";
+              default:
+                return "";
+            }
+          }}
+        >
+          <Spin spinning={loading && orders.length === 0}>
+            {loading && orders.length === 0 ? (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  minHeight: "400px",
+                }}
+              >
+                <Spin size="large" />
+              </div>
+            ) : orders.length === 0 ? (
+              <Empty
+                description={searchText ? "未找到匹配的订单" : "暂无订单"}
+                style={{ marginTop: "100px" }}
+              />
+            ) : (
+              <>
+                <div style={{ background: "#f5f5f5" }}>
+                  {orders.map((item: Order) => {
+                    const statusInfo = getStatusInfo(item.status);
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: 0,
+                          marginBottom: "8px",
+                          background: "#fff",
+                          borderBottom: "1px solid #f0f0f0",
+                        }}
+                      >
+                        <div style={{ width: "100%", padding: "12px" }}>
+                          {/* 店铺名称和状态 */}
                           <div
                             style={{
                               display: "flex",
+                              justifyContent: "space-between",
                               alignItems: "center",
-                              gap: "6px",
+                              marginBottom: "12px",
+                              paddingBottom: "8px",
+                              borderBottom: "1px solid #f0f0f0",
                             }}
                           >
                             <div
                               style={{
-                                width: "20px",
-                                height: "20px",
-                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "20px",
+                                  height: "20px",
+                                  borderRadius: "50%",
+                                  background: "#f0f0f0",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                🏪
+                              </div>
+                              <Text strong style={{ fontSize: "14px" }}>
+                                商家店铺
+                              </Text>
+                            </div>
+                            <Tag color={statusInfo.color} style={{ margin: 0 }}>
+                              {statusInfo.text}
+                            </Tag>
+                          </div>
+
+                          {/* 订单信息 */}
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "12px",
+                              marginBottom: "12px",
+                            }}
+                          >
+                            {/* 商品图片占位 */}
+                            <div
+                              style={{
+                                width: "80px",
+                                height: "80px",
                                 background: "#f0f0f0",
+                                flexShrink: 0,
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                fontSize: "10px",
+                                fontSize: "24px",
                               }}
                             >
-                              🏪
+                              📦
                             </div>
-                            <Text strong style={{ fontSize: "14px" }}>
-                              商家店铺
-                            </Text>
-                          </div>
-                          <Tag color={statusInfo.color} style={{ margin: 0 }}>
-                            {statusInfo.text}
-                          </Tag>
-                        </div>
 
-                        {/* 订单信息 */}
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "12px",
-                            marginBottom: "12px",
-                          }}
-                        >
-                          {/* 商品图片占位 */}
-                          <div
-                            style={{
-                              width: "80px",
-                              height: "80px",
-                              background: "#f0f0f0",
-                              flexShrink: 0,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "24px",
-                            }}
-                          >
-                            📦
-                          </div>
-
-                          {/* 商品信息 */}
-                          <div
-                            style={{
-                              flex: 1,
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: "4px",
-                            }}
-                          >
-                            <Text
-                              strong
-                              style={{ fontSize: "14px", lineHeight: "20px" }}
-                              ellipsis={{ tooltip: true }}
-                            >
-                              订单号: {formatOrderNo(item.id)}
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: "12px",
-                                color: "#999",
-                                lineHeight: "18px",
-                              }}
-                              ellipsis={{ tooltip: true }}
-                            >
-                              收货人: {item.recipientName}
-                            </Text>
+                            {/* 商品信息 */}
                             <div
                               style={{
+                                flex: 1,
                                 display: "flex",
-                                alignItems: "center",
+                                flexDirection: "column",
                                 gap: "4px",
-                                fontSize: "12px",
-                                color: "#999",
-                              }}
-                            >
-                              <EnvironmentOutlined
-                                style={{ fontSize: "10px" }}
-                              />
-                              <Text
-                                ellipsis={{ tooltip: true }}
-                                style={{ fontSize: "12px", color: "#999" }}
-                              >
-                                {item.recipientAddress}
-                              </Text>
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginTop: "4px",
                               }}
                             >
                               <Text
                                 strong
-                                style={{ fontSize: "16px", color: "#ff2442" }}
+                                style={{ fontSize: "14px", lineHeight: "20px" }}
+                                ellipsis={{ tooltip: true }}
                               >
-                                ¥{item.amount.toFixed(2)}
+                                订单号: {formatOrderNo(item.id)}
                               </Text>
-                              <Text style={{ fontSize: "12px", color: "#999" }}>
-                                {formatDate(item.createTime)}
+                              <Text
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#999",
+                                  lineHeight: "18px",
+                                }}
+                                ellipsis={{ tooltip: true }}
+                              >
+                                收货人: {item.recipientName}
                               </Text>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  fontSize: "12px",
+                                  color: "#999",
+                                }}
+                              >
+                                <EnvironmentOutlined
+                                  style={{ fontSize: "10px" }}
+                                />
+                                <Text
+                                  ellipsis={{ tooltip: true }}
+                                  style={{ fontSize: "12px", color: "#999" }}
+                                >
+                                  {item.recipientAddress}
+                                </Text>
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  marginTop: "4px",
+                                }}
+                              >
+                                <Text
+                                  strong
+                                  style={{ fontSize: "16px", color: "#ff2442" }}
+                                >
+                                  ¥{item.amount.toFixed(2)}
+                                </Text>
+                                <Text
+                                  style={{ fontSize: "12px", color: "#999" }}
+                                >
+                                  {formatDate(item.createTime)}
+                                </Text>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* 操作按钮 - 只显示查看物流 */}
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                            gap: "8px",
-                          }}
-                        >
-                          <Button
-                            type="primary"
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/tracking/${item.id}`);
+                          {/* 操作按钮 - 只显示查看物流 */}
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "flex-end",
+                              gap: "8px",
                             }}
                           >
-                            查看物流
-                          </Button>
+                            <Button
+                              type="primary"
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/tracking/${item.id}`);
+                              }}
+                            >
+                              查看物流
+                            </Button>
+                          </div>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+                {/* 触底加载指示器和观察目标 */}
+                <div
+                  ref={observerTargetRef}
+                  style={{ padding: "16px", textAlign: "center" }}
+                >
+                  {loadingMore && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <Spin size="small" />
+                      <Text style={{ color: "#999" }}>加载更多...</Text>
                     </div>
-                  );
-                })}
-              </div>
-              {/* 触底加载指示器和观察目标 */}
-              <div
-                ref={observerTargetRef}
-                style={{ padding: "16px", textAlign: "center" }}
-              >
-                {loadingMore && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <Spin size="small" />
-                    <Text style={{ color: "#999" }}>加载更多...</Text>
-                  </div>
-                )}
-                {!pagination.hasMore && orders.length > 0 && (
-                  <Text style={{ color: "#999" }}>没有更多订单了</Text>
-                )}
-              </div>
-            </>
-          )}
-        </Spin>
+                  )}
+                  {!pagination.hasMore && orders.length > 0 && (
+                    <Text style={{ color: "#999" }}>没有更多订单了</Text>
+                  )}
+                </div>
+              </>
+            )}
+          </Spin>
+        </PullToRefresh>
       </Content>
 
       {/* 筛选抽屉 */}
