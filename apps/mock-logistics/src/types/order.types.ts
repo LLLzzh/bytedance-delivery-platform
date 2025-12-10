@@ -13,6 +13,16 @@ export enum OrderStatus {
 }
 
 /**
+ * 异常订单类型枚举
+ */
+export enum AnomalyType {
+  None = "none", // 正常订单
+  RouteDeviation = "routeDeviation", // 轨迹偏移
+  LongTimeStopped = "longTimeStopped", // 长时间轨迹不动
+  LongTimeNoUpdate = "longTimeNoUpdate", // 长时间状态未更新
+}
+
+/**
  * 数据库返回的订单行类型
  */
 export interface ShippingOrderRow {
@@ -36,4 +46,5 @@ export interface MockDeliveryOrder {
   recipientCoords: Coordinates;
   ruleId: number;
   updateInterval: number; // 推送间隔（毫秒）
+  anomalyType: AnomalyType; // 异常类型
 }

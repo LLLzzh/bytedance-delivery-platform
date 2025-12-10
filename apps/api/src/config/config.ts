@@ -12,4 +12,10 @@ export const config = {
     user: process.env.DB_USER || "postgres",
     password: process.env.DB_PASSWORD || "postgres",
   },
+  // Redis 配置（用于存储订单异常类型）
+  redis: {
+    host: process.env.REDIS_HOST || "localhost",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+  },
 };

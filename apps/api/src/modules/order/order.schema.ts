@@ -7,6 +7,14 @@ const CoordinateSchema = z.tuple([
   z.number().min(-90).max(90), // 纬度 (Latitude)
 ]);
 
+// 异常类型枚举
+const AnomalyTypeSchema = z.enum([
+  "none",
+  "routeDeviation",
+  "longTimeStopped",
+  "longTimeNoUpdate",
+]);
+
 // 订单创建请求体的校验
 export const CreateOrderSchema = z
   .object({
@@ -30,6 +38,11 @@ export const CreateOrderSchema = z
     // 如果前端需要传入，则在此处校验。如果仅由后端设置，则不需要在此处校验。
     // 鉴于你的 CreateOrderDTO 包含了 merchantId，我们在此处校验：
     merchantId: z.string().min(1, "商家ID不能为空"),
+
+    // 异常订单类型（可选）
+    anomalyType: AnomalyTypeSchema.optional().describe(
+      "异常订单类型：none(正常), routeDeviation(轨迹偏移), longTimeStopped(长时间不动), longTimeNoUpdate(长时间未更新)"
+    ),
   })
   .strict("请求体中包含未定义的额外字段"); // 推荐使用 .strict() 避免传输不必要的字段
 

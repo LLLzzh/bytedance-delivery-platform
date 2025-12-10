@@ -12,7 +12,12 @@ import {
   OrderRow,
   CountRow,
   OrderStatistics,
+  AnomalyType,
 } from "./order.types.js";
+import {
+  setOrderAnomalyType,
+  getOrderAnomalyType,
+} from "../../config/redis.js";
 import {
   coordsToPointWKT,
   wrapWKTToGeomFromText,
@@ -144,7 +149,26 @@ function calculateTraveledPath(
   return routePath.slice(0, nearestIndex + 1);
 }
 
-export function mapRowToOrder(row: OrderRow): Order {
+/**
+ * 将异常类型转换为中文异常原因
+ */
+function getAbnormalReasonFromAnomalyType(
+  anomalyType: string | null
+): string | undefined {
+  if (!anomalyType || anomalyType === "none") {
+    return undefined;
+  }
+
+  const reasonMap: Record<string, string> = {
+    routeDeviation: "轨迹偏移超过 5 公里",
+    longTimeStopped: "长时间轨迹不动",
+    longTimeNoUpdate: "位置更新间隔超过 5 分钟，可能异常",
+  };
+
+  return reasonMap[anomalyType] || "订单出现异常情况";
+}
+
+export function mapRowToOrder(row: OrderRow, abnormalReason?: string): Order {
   // 解析 GEOGRAPHY 坐标
   const recipientCoordsGeoJSON = row.recipient_coords_geojson
     ? JSON.parse(row.recipient_coords_geojson)
@@ -202,6 +226,7 @@ export function mapRowToOrder(row: OrderRow): Order {
     routePath: routePath,
     traveledPath: traveledPath, // 已走过的路径点
     isAbnormal: row.is_abnormal,
+    abnormalReason: abnormalReason || undefined, // 异常原因（从 Redis 获取）
     ruleId: row.rule_id,
   };
 }
@@ -221,12 +246,13 @@ export async function createOrder(
     recipientAddress,
     recipientCoords,
     merchantId,
+    anomalyType = AnomalyType.None,
   } = data;
 
   // 1. 生成收货点 Point 的 WKT 表达式
   const recipientPointWKT = coordsToPointWKT(recipientCoords);
 
-  // 2. 插入订单数据
+  // 2. 插入订单数据（不存储异常类型到数据库）
   const sql = `
         INSERT INTO orders (
             id, user_id, merchant_id, amount, status, rule_id, recipient_name, recipient_address, recipient_coords
@@ -252,8 +278,6 @@ export async function createOrder(
     recipientName, // $6
     recipientAddress, // $7
   ];
-  // 注意：这里 $8 参数不再需要，因为 recipientPointWKT 已经通过 wrapWKTToGeomFromText 嵌入到 SQL 字符串中了
-  // 如果你希望使用参数化查询，你需要回到旧写法，或者确保你的 wrapWKTToGeomFromText 返回的是正确的 SQL 模板
 
   const rows: OrderRow[] = await query(sql, params);
 
@@ -261,8 +285,26 @@ export async function createOrder(
     throw new Error("Order creation failed.");
   }
 
-  // 3. 映射并返回 Order
-  return mapRowToOrder(rows[0]);
+  const order = mapRowToOrder(rows[0]);
+
+  // 3. 如果设置了异常类型，存储到 Redis（供 mock-logistics 读取）
+  if (anomalyType !== AnomalyType.None) {
+    try {
+      await setOrderAnomalyType(order.id, anomalyType);
+      console.log(
+        `[OrderRepository] Stored anomaly type ${anomalyType} for order ${order.id} in Redis`
+      );
+    } catch (error) {
+      // Redis 连接失败不影响订单创建，只记录日志
+      console.warn(
+        `[OrderRepository] Failed to store anomaly type in Redis:`,
+        error
+      );
+    }
+  }
+
+  // 4. 返回 Order
+  return order;
 }
 
 // ----------------------------------------------------------------------
@@ -293,7 +335,19 @@ export async function findOrderById(
     return null;
   }
 
-  return mapRowToOrder(rows[0]);
+  // 从 Redis 获取异常类型并转换为异常原因
+  let abnormalReason: string | undefined = undefined;
+  try {
+    const anomalyType = await getOrderAnomalyType(orderId);
+    abnormalReason = getAbnormalReasonFromAnomalyType(anomalyType);
+  } catch (error) {
+    console.warn(
+      `[OrderRepository] Failed to get anomaly type from Redis for order ${orderId}:`,
+      error
+    );
+  }
+
+  return mapRowToOrder(rows[0], abnormalReason);
 }
 
 /**
@@ -387,7 +441,23 @@ export async function findOrdersByFilter(
   params.push(offset);
 
   const dataRows: OrderRow[] = await query(dataSql, params);
-  const orders = dataRows.map(mapRowToOrder); // 使用已有的映射函数
+
+  // 6. 批量从 Redis 获取异常类型并转换为异常原因
+  const orders = await Promise.all(
+    dataRows.map(async (row) => {
+      let abnormalReason: string | undefined = undefined;
+      try {
+        const anomalyType = await getOrderAnomalyType(row.id);
+        abnormalReason = getAbnormalReasonFromAnomalyType(anomalyType);
+      } catch (error) {
+        console.warn(
+          `[OrderRepository] Failed to get anomaly type from Redis for order ${row.id}:`,
+          error
+        );
+      }
+      return mapRowToOrder(row, abnormalReason);
+    })
+  );
 
   // 6. 返回分页结果
   return {
