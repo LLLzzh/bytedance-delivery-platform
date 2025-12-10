@@ -485,9 +485,25 @@ const OrderList: React.FC = () => {
                                 商家店铺
                               </Text>
                             </div>
-                            <Tag color={statusInfo.color} style={{ margin: 0 }}>
-                              {statusInfo.text}
-                            </Tag>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "6px",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Tag
+                                color={statusInfo.color}
+                                style={{ margin: 0 }}
+                              >
+                                {statusInfo.text}
+                              </Tag>
+                              {item.isAbnormal && (
+                                <Tag color="error" style={{ margin: 0 }}>
+                                  异常
+                                </Tag>
+                              )}
+                            </div>
                           </div>
 
                           {/* 订单信息 */}
@@ -523,13 +539,44 @@ const OrderList: React.FC = () => {
                                 gap: "4px",
                               }}
                             >
-                              <Text
-                                strong
-                                style={{ fontSize: "14px", lineHeight: "20px" }}
-                                ellipsis={{ tooltip: true }}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                }}
                               >
-                                订单号: {formatOrderNo(item.id)}
-                              </Text>
+                                <Text
+                                  strong
+                                  style={{
+                                    fontSize: "14px",
+                                    lineHeight: "20px",
+                                  }}
+                                  ellipsis={{ tooltip: true }}
+                                >
+                                  订单号: {formatOrderNo(item.id)}
+                                </Text>
+                                {item.isAbnormal && (
+                                  <Tag
+                                    color="error"
+                                    style={{ fontSize: "12px" }}
+                                  >
+                                    异常订单
+                                  </Tag>
+                                )}
+                              </div>
+                              {item.isAbnormal && item.abnormalReason && (
+                                <Text
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "#ff4d4f",
+                                    lineHeight: "18px",
+                                  }}
+                                  ellipsis={{ tooltip: true }}
+                                >
+                                  ⚠️ {item.abnormalReason}
+                                </Text>
+                              )}
                               <Text
                                 style={{
                                   fontSize: "12px",

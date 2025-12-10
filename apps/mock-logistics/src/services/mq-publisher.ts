@@ -1,4 +1,4 @@
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import { config } from "../config/config.js";
 import { Coordinates } from "../shared/geo.types.js";
 

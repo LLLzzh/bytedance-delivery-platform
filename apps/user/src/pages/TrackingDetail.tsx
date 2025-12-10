@@ -75,6 +75,17 @@ function generateTimeline(order: Order): TimelineItem[] {
     timestamp: order.createTime,
   });
 
+  // 如果订单异常，添加异常记录
+  if (order.isAbnormal && order.lastUpdateTime) {
+    timeline.push({
+      time: formatDateTime(order.lastUpdateTime).time,
+      date: formatDateTime(order.lastUpdateTime).date,
+      status: "异常",
+      detail: order.abnormalReason || "订单出现异常情况",
+      timestamp: order.lastUpdateTime,
+    });
+  }
+
   // 2. 已发货
   if (
     order.status === OrderStatus.PickedUp ||
@@ -868,19 +879,87 @@ const TrackingDetail: React.FC = () => {
                   <Text strong style={{ fontSize: "16px", color: "#333" }}>
                     订单号: {order.id.slice(-8)}
                   </Text>
-                  {statusInfo && (
-                    <Tag
-                      color={statusInfo.color}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
+                    {statusInfo && (
+                      <Tag
+                        color={statusInfo.color}
+                        style={{
+                          fontSize: "13px",
+                          padding: "2px 8px",
+                          borderRadius: "2px",
+                        }}
+                      >
+                        {statusInfo.text}
+                      </Tag>
+                    )}
+                    {order.isAbnormal && (
+                      <Tag
+                        color="error"
+                        style={{
+                          fontSize: "13px",
+                          padding: "2px 8px",
+                          borderRadius: "2px",
+                        }}
+                      >
+                        异常
+                      </Tag>
+                    )}
+                  </div>
+                </div>
+                {order.isAbnormal && (
+                  <div
+                    style={{
+                      marginBottom: "12px",
+                      padding: "8px 12px",
+                      background: "#fff2f0",
+                      border: "1px solid #ffccc7",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    <div
                       style={{
-                        fontSize: "13px",
-                        padding: "2px 8px",
-                        borderRadius: "2px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        marginBottom: "4px",
                       }}
                     >
-                      {statusInfo.text}
-                    </Tag>
-                  )}
-                </div>
+                      <Text
+                        strong
+                        style={{ fontSize: "14px", color: "#ff4d4f" }}
+                      >
+                        ⚠️ 异常订单
+                      </Text>
+                    </div>
+                    {order.abnormalReason ? (
+                      <Text
+                        style={{
+                          fontSize: "13px",
+                          color: "#ff7875",
+                          lineHeight: "20px",
+                        }}
+                      >
+                        {order.abnormalReason}
+                      </Text>
+                    ) : (
+                      <Text
+                        style={{
+                          fontSize: "13px",
+                          color: "#ff7875",
+                          lineHeight: "20px",
+                        }}
+                      >
+                        订单出现异常情况，请及时联系客服处理
+                      </Text>
+                    )}
+                  </div>
+                )}
                 <div
                   style={{
                     fontSize: "14px",
@@ -920,7 +999,8 @@ const TrackingDetail: React.FC = () => {
                 >
                   {/* 根据订单状态显示不同的操作按钮 */}
                   {order.status === OrderStatus.Shipping &&
-                    // 运输中：只能查看实时路径
+                    // 运输中：只能查看实时路径（异常订单不显示）
+                    !order.isAbnormal &&
                     canConnect && (
                       <Button
                         type={isConnected ? "default" : "primary"}
@@ -937,33 +1017,21 @@ const TrackingDetail: React.FC = () => {
                         {isConnected ? "断开实时追踪" : "查看实时路径"}
                       </Button>
                     )}
+                  {order.status === OrderStatus.Shipping &&
+                    order.isAbnormal && (
+                      <Text type="secondary" style={{ fontSize: "12px" }}>
+                        异常订单暂不支持实时追踪
+                      </Text>
+                    )}
                   {order.status === OrderStatus.Arrived && (
-                    // 待收货：可以查看实时路径 + 确认收货
-                    <>
-                      {canConnect && (
-                        <Button
-                          type={isConnected ? "default" : "primary"}
-                          icon={
-                            isConnected ? (
-                              <DisconnectOutlined />
-                            ) : (
-                              <RadarChartOutlined />
-                            )
-                          }
-                          loading={isConnecting}
-                          onClick={handleToggleRealtimeTracking}
-                        >
-                          {isConnected ? "断开实时追踪" : "查看实时路径"}
-                        </Button>
-                      )}
-                      <Button
-                        type="primary"
-                        icon={<CheckCircleOutlined />}
-                        onClick={handleConfirmDelivery}
-                      >
-                        确认收货
-                      </Button>
-                    </>
+                    // 待收货：只显示确认收货按钮
+                    <Button
+                      type="primary"
+                      icon={<CheckCircleOutlined />}
+                      onClick={handleConfirmDelivery}
+                    >
+                      确认收货
+                    </Button>
                   )}
                   {(order.status === OrderStatus.Pending ||
                     order.status === OrderStatus.PickedUp ||
@@ -1022,13 +1090,21 @@ const TrackingDetail: React.FC = () => {
                             width: isLatest ? "18px" : "12px",
                             height: isLatest ? "18px" : "12px",
                             borderRadius: "50%",
-                            backgroundColor: isLatest ? "#52c41a" : "#d9d9d9",
+                            backgroundColor:
+                              item.status === "异常"
+                                ? "#ff4d4f"
+                                : isLatest
+                                  ? "#52c41a"
+                                  : "#d9d9d9",
                             border: isLatest
                               ? "3px solid #fff"
                               : "2px solid #fff",
-                            boxShadow: isLatest
-                              ? "0 0 0 2px rgba(82, 196, 26, 0.2)"
-                              : "none",
+                            boxShadow:
+                              item.status === "异常"
+                                ? "0 0 0 2px rgba(255, 77, 79, 0.2)"
+                                : isLatest
+                                  ? "0 0 0 2px rgba(82, 196, 26, 0.2)"
+                                  : "none",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -1077,16 +1153,32 @@ const TrackingDetail: React.FC = () => {
                             marginBottom: "8px",
                           }}
                         >
-                          <Text
+                          <div
                             style={{
-                              fontSize: isLatest ? "16px" : "15px",
-                              color: isLatest ? "#333" : "#666",
-                              fontWeight: isLatest ? 600 : 400,
-                              lineHeight: "22px",
+                              display: "flex",
+                              gap: "6px",
+                              alignItems: "center",
                             }}
                           >
-                            {item.status}
-                          </Text>
+                            <Text
+                              style={{
+                                fontSize: isLatest ? "16px" : "15px",
+                                color: isLatest ? "#333" : "#666",
+                                fontWeight: isLatest ? 600 : 400,
+                                lineHeight: "22px",
+                              }}
+                            >
+                              {item.status}
+                            </Text>
+                            {item.status === "异常" && (
+                              <Tag
+                                color="error"
+                                style={{ fontSize: "11px", margin: 0 }}
+                              >
+                                异常
+                              </Tag>
+                            )}
+                          </div>
                           <Text
                             style={{
                               fontSize: "13px",

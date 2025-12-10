@@ -40,6 +40,23 @@ export async function query<T>(
   }
 }
 
+/**
+ * 执行 UPDATE/INSERT/DELETE 等修改操作
+ * 返回受影响的行数
+ */
+export async function executeUpdate(
+  sql: string,
+  params: unknown[] = []
+): Promise<number> {
+  const client = await db.connect();
+  try {
+    const result = await client.query(sql, params);
+    return result.rowCount || 0;
+  } finally {
+    client.release();
+  }
+}
+
 db.on("error", (err) => {
   console.error("[Worker DB] Unexpected error on idle client", err);
   process.exit(-1);
