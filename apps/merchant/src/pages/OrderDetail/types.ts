@@ -1,6 +1,7 @@
 // 订单详情页类型定义
 
 export interface LogisticsLog {
+  date: string; // 格式: "MM-DD"
   time: string; // 格式: "HH:mm"
   status: string; // 状态描述
 }

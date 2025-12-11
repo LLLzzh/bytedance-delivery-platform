@@ -160,9 +160,9 @@ function getAbnormalReasonFromAnomalyType(
   }
 
   const reasonMap: Record<string, string> = {
-    routeDeviation: "轨迹偏移超过 5 公里",
+    routeDeviation: "轨迹偏移",
     longTimeStopped: "长时间轨迹不动",
-    longTimeNoUpdate: "位置更新间隔超过 5 分钟，可能异常",
+    longTimeNoUpdate: "位置更新间隔长，可能异常",
   };
 
   return reasonMap[anomalyType] || "订单出现异常情况";
@@ -365,6 +365,7 @@ export async function findOrdersByFilter(
     userId,
     status,
     searchQuery,
+    isAbnormal,
     sortBy = "createTime",
     sortDirection = "DESC",
   } = queryParams;
@@ -406,6 +407,12 @@ export async function findOrdersByFilter(
     );
     params.push(`%${searchQuery}%`); // 模糊搜索需要百分号
     paramIndex++;
+  }
+
+  // 2D. 异常订单筛选
+  if (isAbnormal !== undefined) {
+    whereClauses.push(`o.is_abnormal = $${paramIndex++}`);
+    params.push(isAbnormal);
   }
 
   // 3. 构建完整的 WHERE 子句
@@ -646,7 +653,7 @@ export async function completeDelivery(
 // ----------------------------------------------------------------------
 
 /**
- * 获取订单统计信息（待发货、运输中、已完成、总交易额）
+ * 获取订单统计信息（待发货、运输中、已完成、异常订单、总交易额）
  * @param merchantId 商家ID
  * @returns OrderStatistics
  */
@@ -658,6 +665,7 @@ export async function getOrderStatistics(
       COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
       COUNT(*) FILTER (WHERE status IN ('shipping', 'pickedUp', 'arrived')) AS shipping_count,
       COUNT(*) FILTER (WHERE status = 'delivered') AS completed_count,
+      COUNT(*) FILTER (WHERE is_abnormal = true) AS abnormal_count,
       COALESCE(SUM(amount), 0) AS total_gmv
     FROM orders
     WHERE merchant_id = $1;
@@ -667,6 +675,7 @@ export async function getOrderStatistics(
     pending_count: string;
     shipping_count: string;
     completed_count: string;
+    abnormal_count: string;
     total_gmv: string | number;
   }> = await query(sql, [merchantId]);
 
@@ -676,6 +685,7 @@ export async function getOrderStatistics(
     pendingCount: parseInt(row.pending_count, 10),
     shippingCount: parseInt(row.shipping_count, 10),
     completedCount: parseInt(row.completed_count, 10),
+    abnormalCount: parseInt(row.abnormal_count, 10),
     totalGMV:
       typeof row.total_gmv === "string"
         ? parseFloat(row.total_gmv)

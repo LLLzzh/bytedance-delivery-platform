@@ -49,6 +49,7 @@ export interface OrderListQuery {
   userId?: string;
   status?: string;
   searchQuery?: string;
+  isAbnormal?: boolean; // 是否异常订单筛选
   sortBy?: "createTime" | "amount" | "status" | "recipientName";
   sortDirection?: "ASC" | "DESC";
 }

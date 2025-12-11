@@ -4,19 +4,31 @@ import { Order, OrderStatus } from "../../services/order";
 import { LogisticsLog, OrderGood } from "./types";
 
 /**
+ * 格式化日期时间
+ */
+function formatDateTime(date: Date): { date: string; time: string } {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return {
+    date: `${month}-${day}`,
+    time: `${hours}:${minutes}`,
+  };
+}
+
+/**
  * 根据订单状态和时间生成物流日志
  */
 export function generateLogisticsLogs(order: Order): LogisticsLog[] {
   const logs: LogisticsLog[] = [];
   const createTime = new Date(order.createTime);
+  const createDateTime = formatDateTime(createTime);
 
   // 订单创建成功
   logs.push({
-    time: createTime.toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }),
+    date: createDateTime.date,
+    time: createDateTime.time,
     status: "订单创建成功",
   });
 
@@ -26,25 +38,21 @@ export function generateLogisticsLogs(order: Order): LogisticsLog[] {
     const shipTime = order.lastUpdateTime
       ? new Date(order.lastUpdateTime)
       : new Date(createTime.getTime() + 5 * 60 * 1000); // 默认创建后5分钟发货
+    const shipDateTime = formatDateTime(shipTime);
 
     logs.push({
-      time: shipTime.toLocaleTimeString("zh-CN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }),
+      date: shipDateTime.date,
+      time: shipDateTime.time,
       status: "商家已发货",
     });
 
     // 如果订单在运输中，添加车辆启动日志
     if (["shipping", "pickedUp", "arrived"].includes(order.status)) {
       const startTime = new Date(shipTime.getTime() + 25 * 60 * 1000); // 发货后25分钟启动
+      const startDateTime = formatDateTime(startTime);
       logs.push({
-        time: startTime.toLocaleTimeString("zh-CN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }),
+        date: startDateTime.date,
+        time: startDateTime.time,
         status: "车辆已启动,开始运输",
       });
     }
@@ -54,16 +62,24 @@ export function generateLogisticsLogs(order: Order): LogisticsLog[] {
       const deliverTime = order.lastUpdateTime
         ? new Date(order.lastUpdateTime)
         : new Date(createTime.getTime() + 2 * 60 * 60 * 1000); // 默认创建后2小时送达
-
+      const deliverDateTime = formatDateTime(deliverTime);
       logs.push({
-        time: deliverTime.toLocaleTimeString("zh-CN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }),
+        date: deliverDateTime.date,
+        time: deliverDateTime.time,
         status: "订单已送达",
       });
     }
+  }
+
+  // 如果订单异常，添加异常记录
+  if (order.isAbnormal && order.lastUpdateTime) {
+    const abnormalTime = new Date(order.lastUpdateTime);
+    const abnormalDateTime = formatDateTime(abnormalTime);
+    logs.push({
+      date: abnormalDateTime.date,
+      time: abnormalDateTime.time,
+      status: order.abnormalReason || "订单出现异常情况",
+    });
   }
 
   // 按时间倒序排列（最新的在前）

@@ -5,7 +5,6 @@ export const MERCHANT_LOCATION: [number, number] = [120.301663, 30.297455]; // �
 
 // 时效规则选项
 export const ruleOptions: RuleOption[] = [
-  { id: 101, name: "标准配送", logic: "60分钟达", color: "#1677ff" },
-  { id: 102, name: "极速达", logic: "30分钟达", color: "#52c41a" },
-  { id: 103, name: "次日达", logic: "24小时达", color: "#faad14" },
+  { id: 101, name: "标准配送", logic: "标准配送", color: "#1677ff" },
+  { id: 102, name: "极速达", logic: "极速配送", color: "#52c41a" },
 ];

@@ -86,6 +86,7 @@ export interface OrderListQueryDTO {
   userId?: string;
   status?: string;
   searchQuery?: string;
+  isAbnormal?: boolean; // 是否异常订单筛选
 
   // === 排序 (新增) ===
   // 明确列出前端可以排序的字段（驼峰命名）
@@ -136,5 +137,6 @@ export interface OrderStatistics {
   pendingCount: number; // 待发货订单数
   shippingCount: number; // 运输中订单数
   completedCount: number; // 已完成订单数
+  abnormalCount: number; // 异常订单数
   totalGMV: number; // 总交易额 (GMV)
 }
