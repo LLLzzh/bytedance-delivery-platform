@@ -27,6 +27,27 @@ import { useOrderTracking } from "../hooks/useOrderTracking";
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 
+/**
+ * 计算两点之间的距离（米）- 使用 Haversine 公式
+ */
+function calculateDistance(coord1: Coordinates, coord2: Coordinates): number {
+  const R = 6371000; // 地球半径（米）
+  const lat1 = (coord1[1] * Math.PI) / 180;
+  const lat2 = (coord2[1] * Math.PI) / 180;
+  const deltaLat = ((coord2[1] - coord1[1]) * Math.PI) / 180;
+  const deltaLon = ((coord2[0] - coord1[0]) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      Math.sin(deltaLon / 2) *
+      Math.sin(deltaLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
 type PanelPosition = "middle" | "top" | "bottom";
 
 /**
@@ -72,17 +93,6 @@ function generateTimeline(order: Order): TimelineItem[] {
     detail: "商家已接单，准备发货",
     timestamp: order.createTime,
   });
-
-  // 如果订单异常，添加异常记录
-  if (order.isAbnormal && order.lastUpdateTime) {
-    timeline.push({
-      time: formatDateTime(order.lastUpdateTime).time,
-      date: formatDateTime(order.lastUpdateTime).date,
-      status: "异常",
-      detail: order.abnormalReason || "订单出现异常情况",
-      timestamp: order.lastUpdateTime,
-    });
-  }
 
   // 2. 已发货
   if (
@@ -140,8 +150,38 @@ function generateTimeline(order: Order): TimelineItem[] {
     });
   }
 
+  // 如果订单异常，添加异常记录（将在最后移到最上方）
+  let abnormalItem: TimelineItem | null = null;
+  if (order.isAbnormal && order.lastUpdateTime) {
+    abnormalItem = {
+      time: formatDateTime(order.lastUpdateTime).time,
+      date: formatDateTime(order.lastUpdateTime).date,
+      status: "异常",
+      detail: order.abnormalReason || "长时间未更新",
+      timestamp: order.lastUpdateTime,
+    };
+    timeline.push(abnormalItem);
+  }
+
   // 按时间倒序排列（最新的在上面）
-  return timeline.reverse();
+  const reversedTimeline = timeline.reverse();
+
+  // 如果有异常记录，将异常移到最上方（无论时间如何）
+  if (abnormalItem) {
+    // 找到异常项在数组中的位置
+    const abnormalIndex = reversedTimeline.findIndex(
+      (item) =>
+        item.status === "异常" && item.timestamp === abnormalItem?.timestamp
+    );
+    if (abnormalIndex !== -1) {
+      // 移除异常项
+      const [abnormal] = reversedTimeline.splice(abnormalIndex, 1);
+      // 将异常项插入到最前面
+      reversedTimeline.unshift(abnormal);
+    }
+  }
+
+  return reversedTimeline;
 }
 
 /**
@@ -190,6 +230,8 @@ const TrackingDetail: React.FC = () => {
   const panelRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement>(null);
+  const autoConnectAttemptedRef = useRef(false);
+  const prevOrderStatusRef = useRef<OrderStatus | undefined>(undefined);
 
   // 加载订单详情
   const loadOrderDetail = useCallback(
@@ -297,19 +339,101 @@ const TrackingDetail: React.FC = () => {
   );
 
   // 使用 WebSocket 追踪（手动连接）
-  const { isConnected } = useOrderTracking(orderId, order?.status, {
-    onPositionUpdate: handlePositionUpdate,
-    onStatusUpdate: handleStatusUpdate,
-    onError: (error) => {
-      console.error("[TrackingDetail] WebSocket error:", error);
-      const errorMessage = error.message || "实时追踪连接失败";
-      if (errorMessage.includes("不支持实时追踪")) {
-        message.warning(errorMessage);
-      } else {
-        message.error(errorMessage || "实时追踪连接失败，请稍后重试");
-      }
+  const { isConnected, connect } = useOrderTracking(
+    orderId,
+    order?.status,
+    {
+      onPositionUpdate: handlePositionUpdate,
+      onStatusUpdate: handleStatusUpdate,
+      onError: (error) => {
+        console.error("[TrackingDetail] WebSocket error:", error);
+        const errorMessage = error.message || "实时追踪连接失败";
+        if (
+          errorMessage.includes("不支持实时追踪") ||
+          errorMessage.includes("异常订单")
+        ) {
+          message.warning(errorMessage);
+        } else {
+          message.error(errorMessage || "实时追踪连接失败，请稍后重试");
+        }
+      },
     },
-  });
+    order?.isAbnormal
+  );
+
+  // 自动连接逻辑：判断货物是否离目的地距离小于10km
+  // 仅在 Shipping 状态时自动连接，Arrived 状态不应该再连接（因为货物已经到达）
+  // 异常订单不进行实时跟踪
+  useEffect(() => {
+    if (!order || isConnected) {
+      // 如果订单不存在或已经连接，不执行自动连接
+      return;
+    }
+
+    // 如果订单有异常，不进行实时跟踪
+    if (order.isAbnormal) {
+      console.log("[TrackingDetail] 订单存在异常，不进行实时跟踪");
+      return;
+    }
+
+    const currentStatus = order.status;
+    const prevStatus = prevOrderStatusRef.current;
+
+    // 更新状态记录
+    prevOrderStatusRef.current = currentStatus;
+
+    // 只允许在运输中状态时自动连接
+    if (currentStatus !== OrderStatus.Shipping) {
+      // 如果从 Shipping 状态变为非 Shipping，重置自动连接标记
+      if (prevStatus === OrderStatus.Shipping) {
+        autoConnectAttemptedRef.current = false;
+      }
+      return;
+    }
+
+    // 如果从非 Shipping 状态变为 Shipping，重置自动连接标记
+    if (prevStatus !== OrderStatus.Shipping) {
+      autoConnectAttemptedRef.current = false;
+    }
+
+    // 如果已经尝试过自动连接，不再尝试
+    if (autoConnectAttemptedRef.current) {
+      return;
+    }
+
+    // 检查是否有当前位置和目的地坐标
+    const currentPos = pathData?.currentPosition || order.currentPosition;
+    const destinationPos = order.recipientCoords;
+
+    if (!currentPos || !destinationPos) {
+      console.log(
+        "[TrackingDetail] 缺少位置信息，无法自动连接:",
+        "currentPos:",
+        currentPos,
+        "destinationPos:",
+        destinationPos
+      );
+      return;
+    }
+
+    // 计算距离（米）
+    const distanceInMeters = calculateDistance(currentPos, destinationPos);
+    const distanceInKm = distanceInMeters / 1000;
+
+    console.log(
+      `[TrackingDetail] 当前距离目的地: ${distanceInKm.toFixed(2)}km`
+    );
+
+    // 如果距离小于10km，自动建立WebSocket连接
+    if (distanceInKm < 10) {
+      console.log(
+        `[TrackingDetail] 距离目的地 ${distanceInKm.toFixed(2)}km，自动建立实时追踪连接`
+      );
+      autoConnectAttemptedRef.current = true; // 标记已尝试自动连接
+      connect();
+      message.info("货物即将到达，已自动开启实时追踪");
+    }
+  }, [order, pathData, isConnected, connect]);
 
   // 确认收货
   const handleConfirmDelivery = async () => {
@@ -340,6 +464,11 @@ const TrackingDetail: React.FC = () => {
     const headerHeight = 50;
     const availableHeight = windowHeight - headerHeight;
 
+    // 如果订单状态为待发货，面板占满屏幕（减去header高度）
+    if (order?.status === OrderStatus.Pending) {
+      return `${availableHeight}px`;
+    }
+
     switch (panelPosition) {
       case "top":
         return `${availableHeight * 0.9}px`;
@@ -354,6 +483,11 @@ const TrackingDetail: React.FC = () => {
 
   // 获取地图高度（根据面板高度动态计算）
   const getMapHeight = (): string => {
+    // 如果订单状态为待发货，不显示地图
+    if (order?.status === OrderStatus.Pending) {
+      return "0px";
+    }
+
     const windowHeight = window.innerHeight;
     const headerHeight = 50;
     const availableHeight = windowHeight - headerHeight;
@@ -629,12 +763,13 @@ const TrackingDetail: React.FC = () => {
         ref={mapContainerRef}
         style={{
           height: getMapHeight(),
-          minHeight: "200px",
+          minHeight: order?.status === OrderStatus.Pending ? "0px" : "200px",
           position: "relative",
           width: "100%",
           background: "#f5f5f5",
           overflow: "hidden",
           flexShrink: 0,
+          display: order?.status === OrderStatus.Pending ? "none" : "block",
           transition: isDragging
             ? "none"
             : "height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)",

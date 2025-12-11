@@ -6,7 +6,8 @@ import { OrderStatus, Coordinates } from "../services/order";
  * 订单追踪 Hook
  * 手动管理 WebSocket 连接：
  * - 不自动建立连接，需要手动调用 connect() 方法
- * - 订单状态为 delivered 或 cancelled 时自动断开连接
+ * - 订单状态为 arrived、delivered 或 cancelled 时自动断开连接
+ * - 异常订单不允许连接
  * - 页面离开时自动清理连接
  */
 export function useOrderTracking(
@@ -16,7 +17,8 @@ export function useOrderTracking(
     onPositionUpdate?: (coordinates: Coordinates) => void;
     onStatusUpdate?: (status: OrderStatus, message?: string) => void;
     onError?: (error: Error) => void;
-  }
+  },
+  isAbnormal?: boolean
 ) {
   const wsClientRef = useRef<WebSocketClient | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -28,12 +30,26 @@ export function useOrderTracking(
     if (!orderId || !orderStatus) {
       return false;
     }
+    // 异常订单不允许连接
+    if (isAbnormal) {
+      return false;
+    }
     // 仅在运输中或已到达状态时可以建立连接
     return (
       orderStatus === OrderStatus.Shipping ||
       orderStatus === OrderStatus.Arrived
     );
-  }, [orderId, orderStatus]);
+  }, [orderId, orderStatus, isAbnormal]);
+
+  // 断开连接
+  const disconnect = useCallback(() => {
+    if (wsClientRef.current) {
+      wsClientRef.current.disconnect();
+      wsClientRef.current = null;
+      setIsConnected(false);
+      setIsConnecting(false);
+    }
+  }, []);
 
   // 建立连接（手动触发）
   const connect = useCallback(() => {
@@ -43,7 +59,11 @@ export function useOrderTracking(
     }
 
     if (!canConnect()) {
-      callbacks.onError?.(new Error("当前订单状态不支持实时追踪"));
+      if (isAbnormal) {
+        callbacks.onError?.(new Error("异常订单不支持实时追踪"));
+      } else {
+        callbacks.onError?.(new Error("当前订单状态不支持实时追踪"));
+      }
       return;
     }
 
@@ -83,11 +103,15 @@ export function useOrderTracking(
           const statusEnum = status as OrderStatus;
           callbacks.onStatusUpdate?.(statusEnum, message);
 
-          // 如果订单已完成或取消，断开连接
+          // 如果订单已到达、已完成或取消，断开连接
           if (
+            statusEnum === OrderStatus.Arrived ||
             statusEnum === OrderStatus.Delivered ||
             statusEnum === OrderStatus.Cancelled
           ) {
+            console.log(
+              `[useOrderTracking] 订单状态变为 ${statusEnum}，自动断开连接`
+            );
             disconnect();
           }
         }
@@ -108,24 +132,18 @@ export function useOrderTracking(
     const client = new WebSocketClient(orderId, wsCallbacks);
     wsClientRef.current = client;
     client.connect();
-  }, [orderId, canConnect, isConnecting, callbacks]);
+  }, [orderId, canConnect, isConnecting, callbacks, disconnect]);
 
-  // 断开连接
-  const disconnect = useCallback(() => {
-    if (wsClientRef.current) {
-      wsClientRef.current.disconnect();
-      wsClientRef.current = null;
-      setIsConnected(false);
-      setIsConnecting(false);
-    }
-  }, []);
-
-  // 当订单状态变为已完成或已取消时，自动断开连接
+  // 当订单状态变为已到达、已完成或已取消时，自动断开连接
   useEffect(() => {
     if (
+      orderStatus === OrderStatus.Arrived ||
       orderStatus === OrderStatus.Delivered ||
       orderStatus === OrderStatus.Cancelled
     ) {
+      console.log(
+        `[useOrderTracking] 检测到订单状态为 ${orderStatus}，自动断开连接`
+      );
       disconnect();
     }
   }, [orderStatus, disconnect]);
