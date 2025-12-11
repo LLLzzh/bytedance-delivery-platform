@@ -5,17 +5,15 @@ import {
   Typography,
   Button,
   Empty,
-  Card,
   Spin,
   message,
   Tag,
+  Avatar,
 } from "antd";
 import {
   LeftOutlined,
   ReloadOutlined,
-  CheckCircleOutlined,
   RadarChartOutlined,
-  DisconnectOutlined,
 } from "@ant-design/icons";
 import { DeliveryMap } from "@repo/ui";
 import {
@@ -299,13 +297,7 @@ const TrackingDetail: React.FC = () => {
   );
 
   // 使用 WebSocket 追踪（手动连接）
-  const {
-    isConnected,
-    isConnecting,
-    canConnect,
-    connect: connectWebSocket,
-    disconnect: disconnectWebSocket,
-  } = useOrderTracking(orderId, order?.status, {
+  const { isConnected } = useOrderTracking(orderId, order?.status, {
     onPositionUpdate: handlePositionUpdate,
     onStatusUpdate: handleStatusUpdate,
     onError: (error) => {
@@ -318,16 +310,6 @@ const TrackingDetail: React.FC = () => {
       }
     },
   });
-
-  // 处理连接/断开操作
-  const handleToggleRealtimeTracking = () => {
-    if (isConnected) {
-      disconnectWebSocket();
-      message.info("已断开实时追踪");
-    } else {
-      connectWebSocket();
-    }
-  };
 
   // 确认收货
   const handleConfirmDelivery = async () => {
@@ -348,7 +330,6 @@ const TrackingDetail: React.FC = () => {
     }
   };
 
-  const statusInfo = order ? getStatusInfo(order.status) : null;
   const timeline = order ? generateTimeline(order) : [];
   const mapPath = pathData?.routePath || order?.routePath || [];
   const currentPos = pathData?.currentPosition || order?.currentPosition;
@@ -791,7 +772,7 @@ const TrackingDetail: React.FC = () => {
         <div
           ref={dragHandleRef}
           style={{
-            height: "32px",
+            height: "12px",
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
@@ -814,9 +795,6 @@ const TrackingDetail: React.FC = () => {
         >
           <div
             style={{
-              width: "40px",
-              height: "4px",
-              backgroundColor: "#ddd",
               borderRadius: "2px",
               transition: "background-color 0.2s",
             }}
@@ -834,8 +812,6 @@ const TrackingDetail: React.FC = () => {
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: "20px",
-            background: "#f5f5f5",
           }}
         >
           {loading && !order ? (
@@ -852,216 +828,70 @@ const TrackingDetail: React.FC = () => {
           ) : !order ? (
             <Empty description="未找到订单信息" />
           ) : (
-            <Card
-              variant="outlined"
+            <div
               style={{
                 boxShadow: "none",
                 background: "#fff",
                 borderRadius: "8px",
+                padding: "8px",
+                margin: "4px",
               }}
             >
               {/* 订单基本信息 */}
               <div
                 style={{
-                  marginBottom: "24px",
-                  paddingBottom: "20px",
-                  borderBottom: "1px solid #f0f0f0",
+                  marginBottom: "8px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
               >
                 <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "12px",
-                  }}
+                  style={{ display: "flex", alignItems: "center", gap: "12px" }}
                 >
-                  <Text strong style={{ fontSize: "16px", color: "#333" }}>
-                    订单号: {order.id.slice(-8)}
-                  </Text>
-                  <div
+                  <Avatar
+                    src="https://gw.alipayobjects.com/zos/rmsportal/KDpgvguMpGfqaHPjicRK.svg"
                     style={{
-                      display: "flex",
-                      gap: "8px",
-                      alignItems: "center",
+                      backgroundColor: "#fff",
+                      width: "20px",
+                      height: "20px",
                     }}
-                  >
-                    {statusInfo && (
-                      <Tag
-                        color={statusInfo.color}
-                        style={{
-                          fontSize: "13px",
-                          padding: "2px 8px",
-                          borderRadius: "2px",
-                        }}
-                      >
-                        {statusInfo.text}
-                      </Tag>
-                    )}
-                    {order.isAbnormal && (
-                      <Tag
-                        color="error"
-                        style={{
-                          fontSize: "13px",
-                          padding: "2px 8px",
-                          borderRadius: "2px",
-                        }}
-                      >
-                        异常
-                      </Tag>
-                    )}
-                  </div>
-                </div>
-                {order.isAbnormal && (
-                  <div
-                    style={{
-                      marginBottom: "12px",
-                      padding: "8px 12px",
-                      background: "#fff2f0",
-                      border: "1px solid #ffccc7",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    <div
+                  />
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <Text style={{ fontSize: "14px", color: "#7e7e7e" }}>
+                      莱鸟速递
+                    </Text>
+                    <Text
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        marginBottom: "4px",
+                        fontSize: "14px",
+                        color: "#7e7e7e",
+                        marginLeft: "8px",
+                        maxWidth: "200px",
+                        display: "inline-block",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
                     >
-                      <Text
-                        strong
-                        style={{ fontSize: "14px", color: "#ff4d4f" }}
-                      >
-                        ⚠️ 异常订单
-                      </Text>
-                    </div>
-                    {order.abnormalReason ? (
-                      <Text
-                        style={{
-                          fontSize: "13px",
-                          color: "#ff7875",
-                          lineHeight: "20px",
-                        }}
-                      >
-                        {order.abnormalReason}
-                      </Text>
-                    ) : (
-                      <Text
-                        style={{
-                          fontSize: "13px",
-                          color: "#ff7875",
-                          lineHeight: "20px",
-                        }}
-                      >
-                        订单出现异常情况，请及时联系客服处理
-                      </Text>
-                    )}
-                  </div>
-                )}
-                <div
-                  style={{
-                    fontSize: "14px",
-                    color: "#666",
-                    marginBottom: "8px",
-                    lineHeight: "22px",
-                  }}
-                >
-                  <Text>收货人: {order.recipientName}</Text>
-                </div>
-                <div
-                  style={{
-                    fontSize: "14px",
-                    color: "#666",
-                    marginBottom: "12px",
-                    lineHeight: "22px",
-                  }}
-                >
-                  <Text>收货地址: {order.recipientAddress}</Text>
-                </div>
-                <div
-                  style={{
-                    fontSize: "18px",
-                    color: "#ff4d4f",
-                    fontWeight: 600,
-                  }}
-                >
-                  <Text>订单金额: ¥{order.amount.toFixed(2)}</Text>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "8px",
-                    marginTop: "12px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {/* 根据订单状态显示不同的操作按钮 */}
-                  {order.status === OrderStatus.Shipping &&
-                    // 运输中：只能查看实时路径（异常订单不显示）
-                    !order.isAbnormal &&
-                    canConnect && (
-                      <Button
-                        type={isConnected ? "default" : "primary"}
-                        icon={
-                          isConnected ? (
-                            <DisconnectOutlined />
-                          ) : (
-                            <RadarChartOutlined />
-                          )
-                        }
-                        loading={isConnecting}
-                        onClick={handleToggleRealtimeTracking}
-                      >
-                        {isConnected ? "断开实时追踪" : "查看实时路径"}
-                      </Button>
-                    )}
-                  {order.status === OrderStatus.Shipping &&
-                    order.isAbnormal && (
-                      <Text type="secondary" style={{ fontSize: "12px" }}>
-                        异常订单暂不支持实时追踪
-                      </Text>
-                    )}
-                  {order.status === OrderStatus.Arrived && (
-                    // 待收货：只显示确认收货按钮
-                    <Button
-                      type="primary"
-                      icon={<CheckCircleOutlined />}
-                      onClick={handleConfirmDelivery}
-                    >
-                      确认收货
-                    </Button>
-                  )}
-                  {(order.status === OrderStatus.Pending ||
-                    order.status === OrderStatus.PickedUp ||
-                    order.status === OrderStatus.Delivered ||
-                    order.status === OrderStatus.Cancelled) && (
-                    // 其他状态：不显示操作按钮，或显示只读信息
-                    <Text type="secondary" style={{ fontSize: "12px" }}>
-                      {order.status === OrderStatus.Delivered && "订单已完成"}
-                      {order.status === OrderStatus.Cancelled && "订单已取消"}
-                      {order.status === OrderStatus.Pending && "订单待处理"}
-                      {order.status === OrderStatus.PickedUp && "订单已取件"}
+                      {order.id}
                     </Text>
-                  )}
+                  </div>
                 </div>
+                <Button
+                  type="text"
+                  size="small"
+                  style={{ color: "#999", fontSize: "12px" }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(order.id);
+                    message.success("复制成功");
+                  }}
+                >
+                  复制
+                </Button>
               </div>
 
-              {/* 淘宝风格的时间线 */}
+              {/* 时间线 */}
               <div style={{ padding: "16px 0 0 0" }}>
-                <div
-                  style={{
-                    fontSize: "16px",
-                    fontWeight: 600,
-                    color: "#333",
-                    marginBottom: "20px",
-                    paddingBottom: "12px",
-                    borderBottom: "1px solid #f0f0f0",
-                  }}
-                >
-                  物流跟踪
-                </div>
                 {timeline.map((item, index) => {
                   const isLatest = index === 0;
                   return (
@@ -1071,30 +901,48 @@ const TrackingDetail: React.FC = () => {
                         display: "flex",
                         position: "relative",
                         paddingBottom:
-                          index < timeline.length - 1 ? "28px" : "8px",
+                          index < timeline.length - 1 ? "4px" : "8px",
                       }}
                     >
                       {/* 左侧时间线 */}
                       <div
                         style={{
+                          position: "relative",
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
-                          marginRight: "16px",
+                          marginRight: "8px",
+                          width: "28px",
                           flexShrink: 0,
                         }}
                       >
+                        {/* 连接线 */}
+                        {index < timeline.length && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "0",
+                              bottom: "-4px",
+                              left: "50%",
+                              width: "1px",
+                              transform: "translateX(-50%)",
+                              backgroundColor: "#e8e8e8",
+                              zIndex: 0,
+                            }}
+                          />
+                        )}
                         {/* 圆点 */}
                         <div
                           style={{
-                            width: isLatest ? "18px" : "12px",
-                            height: isLatest ? "18px" : "12px",
+                            width: isLatest ? "28px" : "10px",
+                            height: isLatest ? "28px" : "10px",
+                            marginTop: isLatest ? "0px" : "4px",
                             borderRadius: "50%",
                             backgroundColor:
                               item.status === "异常"
                                 ? "#ff4d4f"
                                 : isLatest
-                                  ? "#52c41a"
+                                  ? "#1677FF"
                                   : "#d9d9d9",
                             border: isLatest
                               ? "3px solid #fff"
@@ -1102,9 +950,7 @@ const TrackingDetail: React.FC = () => {
                             boxShadow:
                               item.status === "异常"
                                 ? "0 0 0 2px rgba(255, 77, 79, 0.2)"
-                                : isLatest
-                                  ? "0 0 0 2px rgba(82, 196, 26, 0.2)"
-                                  : "none",
+                                : "none",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -1114,98 +960,161 @@ const TrackingDetail: React.FC = () => {
                           }}
                         >
                           {isLatest && (
-                            <div
-                              style={{
-                                width: "6px",
-                                height: "6px",
-                                borderRadius: "50%",
-                                backgroundColor: "#fff",
-                              }}
-                            />
+                            <svg
+                              viewBox="0 0 1024 1024"
+                              version="1.1"
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="14"
+                              height="14"
+                              fill="#ffffff"
+                            >
+                              <path d="M912 190h-69.9c-9.8 0-19.1 4.5-25.1 12.2L404.7 724.5 207 474a32 32 0 0 0-25.1-12.2H112c-6.7 0-10.4 7.7-6.3 12.9l273.9 347c12.8 16.2 37.4 16.2 50.3 0l488.4-618.9c4.1-5.1 0.4-12.8-6.3-12.8z" />
+                            </svg>
                           )}
                         </div>
-                        {/* 连接线 */}
-                        {index < timeline.length - 1 && (
-                          <div
-                            style={{
-                              width: "2px",
-                              flex: 1,
-                              backgroundColor: isLatest ? "#52c41a" : "#e8e8e8",
-                              marginTop: "6px",
-                              minHeight: "32px",
-                            }}
-                          />
-                        )}
                       </div>
 
                       {/* 右侧内容 */}
                       <div
                         style={{
                           flex: 1,
-                          paddingTop: isLatest ? "0" : "2px",
+                          paddingTop: "0px",
+                          paddingBottom: "4px",
                         }}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "flex-start",
-                            marginBottom: "8px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "6px",
-                              alignItems: "center",
-                            }}
-                          >
-                            <Text
+                        {/* 第一部分：如果是最新节点，显示大标题；如果是历史节点，先显示时间 */}
+                        {isLatest ? (
+                          // === 最新节点样式 (Latest) ===
+                          // 结构：标题 -> 时间 -> 详情
+                          <div>
+                            <div
                               style={{
-                                fontSize: isLatest ? "16px" : "15px",
-                                color: isLatest ? "#333" : "#666",
-                                fontWeight: isLatest ? 600 : 400,
-                                lineHeight: "22px",
+                                display: "flex",
+                                alignItems: "center", // 让文字和标签垂直居中
+                                gap: "4px",
                               }}
                             >
-                              {item.status}
-                            </Text>
-                            {item.status === "异常" && (
-                              <Tag
-                                color="error"
-                                style={{ fontSize: "11px", margin: 0 }}
+                              <Text
+                                style={{
+                                  fontSize: "18px", // 保持大标题样式
+                                  color: "#1677FF", // 保持蓝色高亮
+                                  fontWeight: 600,
+                                  lineHeight: "26px",
+                                }}
                               >
-                                异常
-                              </Tag>
-                            )}
+                                {item.status}
+                              </Text>
+
+                              {/* 恢复原本的异常 Tag 判断逻辑 */}
+                              {item.status === "异常" && (
+                                <Tag
+                                  color="error"
+                                  style={{
+                                    margin: 0,
+                                    fontSize: "12px", // 微调一下大小使其更协调
+                                  }}
+                                >
+                                  异常
+                                </Tag>
+                              )}
+
+                              {/* 确认收货按钮 */}
+                              {item.status === "已到达" && (
+                                <Button
+                                  type="primary"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleConfirmDelivery();
+                                  }}
+                                  style={{
+                                    marginLeft: "auto",
+                                    fontSize: "12px",
+                                    height: "24px",
+                                    padding: "0 8px",
+                                    borderRadius: "12px",
+                                  }}
+                                >
+                                  确认收货
+                                </Button>
+                              )}
+                            </div>
+
+                            <Text
+                              style={{
+                                fontSize: "12px",
+                                color: "#333", // 深色一点的时间
+                                marginBottom: "2px",
+                                display: "block",
+                                fontWeight: 500,
+                              }}
+                            >
+                              {item.date} {item.time}
+                            </Text>
+
+                            <Text
+                              style={{
+                                fontSize: "14px",
+                                color: "#333",
+                                display: "block",
+                              }}
+                            >
+                              {item.detail}
+                            </Text>
                           </div>
-                          <Text
-                            style={{
-                              fontSize: "13px",
-                              color: "#999",
-                              marginLeft: "12px",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {item.date} {item.time}
-                          </Text>
-                        </div>
-                        <Text
-                          style={{
-                            fontSize: "14px",
-                            color: "#999",
-                            lineHeight: "20px",
-                            display: "block",
-                          }}
-                        >
-                          {item.detail}
-                        </Text>
+                        ) : (
+                          // === 历史节点样式 (History) ===
+                          // 结构：时间 -> 标题/状态 -> 详情
+                          <div>
+                            {/* 1. 时间行 (灰色小字) */}
+                            <Text
+                              style={{
+                                fontSize: "12px",
+                                color: "#999",
+                                marginBottom: "4px",
+                                display: "block",
+                              }}
+                            >
+                              {item.date} {item.time}
+                            </Text>
+
+                            {/* 2. 详情内容 (核心变化：这里通常把【状态】和【详情】合并显示，或者上下排列) */}
+                            <div style={{ marginBottom: "4px" }}>
+                              <Text
+                                style={{
+                                  fontSize: "15px",
+                                  color: "#999", // 历史记录整体偏灰
+                                  fontWeight: 400,
+                                  lineHeight: "22px",
+                                }}
+                              >
+                                {item.status && (
+                                  <span
+                                    style={{
+                                      fontWeight: 500,
+                                      color: "#666",
+                                      marginRight: "2px",
+                                      fontSize: "15px",
+                                    }}
+                                  >
+                                    {item.status}
+                                  </span>
+                                )}
+                                <span
+                                  style={{ color: "#999", fontSize: "14px" }}
+                                >
+                                  丨{item.detail}
+                                </span>
+                              </Text>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </Card>
+            </div>
           )}
         </Content>
       </div>

@@ -512,13 +512,15 @@ const OrderList: React.FC = () => {
                               display: "flex",
                               gap: "12px",
                               marginBottom: "12px",
+                              alignItems: "center",
+                              height: "100px",
                             }}
                           >
                             {/* 商品图片占位 */}
                             <div
                               style={{
-                                width: "80px",
-                                height: "80px",
+                                width: "90px",
+                                height: "90px",
                                 background: "#f0f0f0",
                                 flexShrink: 0,
                                 display: "flex",
@@ -615,7 +617,6 @@ const OrderList: React.FC = () => {
                                   justifyContent: "space-between",
                                   alignItems: "center",
                                   marginTop: "4px",
-                                  maxWidth: "90%",
                                 }}
                               >
                                 <Text
