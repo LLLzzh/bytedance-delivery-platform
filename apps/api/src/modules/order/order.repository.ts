@@ -384,8 +384,18 @@ export async function findOrdersByFilter(
 
   // 2B. 状态筛选
   if (status) {
-    whereClauses.push(`o.status = $${paramIndex++}`);
-    params.push(status);
+    const statuses = status.split(",");
+    if (statuses.length > 1) {
+      const placeholders = statuses
+        .map((_, i) => `$${paramIndex + i}`)
+        .join(", ");
+      whereClauses.push(`o.status IN (${placeholders})`);
+      statuses.forEach((s) => params.push(s.trim()));
+      paramIndex += statuses.length;
+    } else {
+      whereClauses.push(`o.status = $${paramIndex++}`);
+      params.push(status);
+    }
   }
 
   // 2C. 搜索 (模糊匹配姓名或地址)

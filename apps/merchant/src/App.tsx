@@ -5,7 +5,6 @@ import React, { useState } from "react";
 import { Layout, Menu, MenuProps, theme, Typography } from "antd"; // 文本组件
 import {
   CarOutlined,
-  DashboardOutlined,
   EnvironmentOutlined,
   RocketOutlined,
 } from "@ant-design/icons"; // 图标
@@ -34,45 +33,6 @@ const DeliveryZonePage: React.FC = () => {
   );
 };
 
-// C. Dashboard Page
-const DashboardPage: React.FC = () => {
-  return (
-    <div
-      style={{
-        height: "100%",
-        padding: 24,
-        background: "#001529",
-        color: "white",
-        borderRadius: 8,
-      }}
-    >
-      <div
-        style={{
-          height: "100%",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          border: "1px dashed rgba(255,255,255,0.3)",
-          borderRadius: 8,
-          flexDirection: "column",
-        }}
-      >
-        <DashboardOutlined
-          style={{ fontSize: 64, marginBottom: 24, opacity: 0.5 }}
-        />
-        <Typography.Title level={2} style={{ color: "white", margin: 0 }}>
-          物流可视化大屏
-        </Typography.Title>
-        <Typography.Text
-          style={{ color: "rgba(255,255,255,0.6)", marginTop: 8 }}
-        >
-          &lt;BigScreenMapPlaceholder /&gt; 预留位置
-        </Typography.Text>
-      </div>
-    </div>
-  );
-};
-
 // --- 2. Layout Component ---
 
 const AppLayout: React.FC = () => {
@@ -89,17 +49,10 @@ const AppLayout: React.FC = () => {
     if (path.startsWith("/DeliveryDispatch") || path.startsWith("/OrderDetail"))
       return "dispatch";
     if (path.startsWith("/FenceConfig")) return "fence";
-    if (path.startsWith("/dashboard")) return "dashboard";
     return "";
   };
 
   const items: MenuProps["items"] = [
-    {
-      key: "dashboard",
-      icon: <DashboardOutlined />,
-      label: "物流可视化大屏",
-      onClick: () => navigate("/dashboard"),
-    },
     {
       key: "logistics",
       icon: <CarOutlined />,
@@ -126,8 +79,6 @@ const AppLayout: React.FC = () => {
     const path = location.pathname;
     if (path.startsWith("/OrderDetail")) return "订单详情";
     switch (key) {
-      case "dashboard":
-        return "物流可视化大屏";
       case "dispatch":
         return "订单发货管理";
       case "fence":
@@ -216,8 +167,7 @@ const App: React.FC = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
+          <Route index element={<Navigate to="/DeliveryDispatch" replace />} />
           <Route path="DeliveryDispatch" element={<OrderDispatchPage />} />
           <Route path="OrderDetail/:id" element={<OrderDetailPage />} />
           <Route path="FenceConfig" element={<DeliveryZonePage />} />

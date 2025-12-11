@@ -123,26 +123,26 @@ const OrderDetailPage: React.FC = () => {
     <div
       style={{
         padding: 16,
-        height: "100vh",
+        height: "85vh",
         display: "flex",
         flexDirection: "column",
       }}
     >
       {/* 返回按钮 */}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, alignSelf: "flex-start" }}>
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate("/DeliveryDispatch")}
+          onClick={() => navigate(-1)}
           size="small"
         >
-          返回订单列表
+          返回
         </Button>
       </div>
 
       <Row gutter={12} style={{ flex: 1, minHeight: 0 }}>
         {/* 左侧：订单信息 */}
         <Col
-          span={10}
+          span={8}
           style={{ height: "100%", display: "flex", flexDirection: "column" }}
         >
           <div style={{ height: "100%", overflow: "auto", paddingRight: 8 }}>
@@ -184,6 +184,7 @@ const OrderDetailPage: React.FC = () => {
                       style={{
                         display: "flex",
                         alignItems: "center",
+                        justifyContent: "flex-start",
                         padding: "8px 0",
                         borderBottom:
                           index < goods.length - 1
@@ -261,7 +262,7 @@ const OrderDetailPage: React.FC = () => {
 
         {/* 右侧：地图 */}
         <Col
-          span={14}
+          span={16}
           style={{ height: "100%", display: "flex", flexDirection: "column" }}
         >
           <Card

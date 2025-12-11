@@ -6,7 +6,8 @@ export type OrderStatus =
   | "shipping"
   | "arrived"
   | "delivered"
-  | "cancelled";
+  | "cancelled"
+  | "abnormal";
 
 export type Coordinates = [number, number];
 
@@ -47,6 +48,7 @@ export interface OrderListQuery {
   searchQuery?: string;
   sortBy?: "createTime" | "amount" | "status" | "recipientName";
   sortDirection?: "ASC" | "DESC";
+  isAbnormal?: boolean;
 }
 
 export interface PaginatedOrderList {
@@ -131,6 +133,9 @@ export const orderService = {
           ...(params.searchQuery && { searchQuery: params.searchQuery }),
           ...(params.sortBy && { sortBy: params.sortBy }),
           ...(params.sortDirection && { sortDirection: params.sortDirection }),
+          ...(params.isAbnormal !== undefined && {
+            isAbnormal: params.isAbnormal,
+          }),
         },
       });
     // 后端直接返回 { success: true, orders: [...], totalCount: ... }
