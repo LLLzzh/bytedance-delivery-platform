@@ -113,8 +113,7 @@ pnpm dev
 - **Worker 服务**: http://localhost:3006
 - **Mock Logistics**: http://localhost:3005
 - **用户端**: http://localhost:5173 (Vite 默认端口)
-- **商家端**: http://localhost:5174 (或下一个可用端口)
-- **数据看板**: http://localhost:5175 (或下一个可用端口)
+- **商家端**: http://localhost:3001 (或下一个可用端口)
 
 ### 单独启动服务
 
@@ -136,8 +135,6 @@ cd apps/user && pnpm dev
 # 商家端
 cd apps/merchant && pnpm dev
 
-# 数据看板
-cd apps/dashboard && pnpm dev
 ```
 
 ## 环境变量配置
