@@ -109,6 +109,7 @@ export interface OrderStatistics {
   pendingCount: number;
   shippingCount: number;
   completedCount: number;
+  abnormalCount: number;
   totalGMV: number;
 }
 

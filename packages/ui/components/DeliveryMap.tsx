@@ -272,10 +272,10 @@ class MarkerMover {
     // 更新标记位置
     this.markerRef.setPosition([currentLng, currentLat]);
 
-    // 计算角度（朝向目标方向）
+    // 根据路线方向设置水平翻转（小车始终保持朝上，只进行左右翻转）
     if (progress > 0 && progress < 1) {
-      const angle = this.calculateAngle(this.startPos, this.targetPos);
-      this.markerRef.setAngle(angle);
+      const shouldFlip = this.shouldFlip(this.startPos, this.targetPos);
+      this.updateMarkerFlip(this.markerRef, shouldFlip);
     }
 
     if (progress < 1) {
@@ -289,7 +289,7 @@ class MarkerMover {
   };
 
   /**
-   * 计算两点之间的角度
+   * 计算两点之间的角度（已废弃，不再使用）
    */
   private calculateAngle(
     start: [number, number],
@@ -298,6 +298,33 @@ class MarkerMover {
     const dx = end[0] - start[0];
     const dy = end[1] - start[1];
     return (Math.atan2(dy, dx) * 180) / Math.PI;
+  }
+
+  /**
+   * 判断是否需要水平翻转（根据路线方向）
+   * 返回 true 表示需要翻转（向左），false 表示不需要翻转（向右）
+   */
+  private shouldFlip(start: [number, number], end: [number, number]): boolean {
+    const dx = end[0] - start[0];
+    // 如果路线方向是向左（dx < 0），需要翻转
+    return dx < 0;
+  }
+
+  /**
+   * 更新标记的水平翻转状态
+   */
+  private updateMarkerFlip(markerRef: any, shouldFlip: boolean) {
+    if (!markerRef) return;
+
+    // 获取标记的 DOM 元素
+    const markerContent = markerRef.getContent();
+    if (markerContent && markerContent.nodeType === 1) {
+      // content 是 DOM 元素，直接查找 img 并更新
+      const imgElement = markerContent.querySelector("img");
+      if (imgElement) {
+        imgElement.style.transform = shouldFlip ? "scaleX(-1)" : "scaleX(1)";
+      }
+    }
   }
 
   /**
@@ -312,6 +339,60 @@ class MarkerMover {
     this.onComplete = undefined;
   }
 }
+
+/**
+ * 更新标记的水平翻转状态（根据路线方向）
+ */
+const updateMarkerFlip = (
+  markerRef: any,
+  pathCoordinates: [number, number][],
+  currentPosition?: [number, number]
+) => {
+  if (!markerRef || !pathCoordinates || pathCoordinates.length < 2) return;
+
+  // 确定用于计算方向的起点和终点
+  let start: [number, number];
+  let end: [number, number];
+
+  if (currentPosition) {
+    // 如果有当前位置，使用当前位置和路径的下一个点
+    start = currentPosition;
+    // 找到路径中当前位置之后的下一个点
+    let currentIndex = -1;
+    for (let i = 0; i < pathCoordinates.length; i++) {
+      const coord: [number, number] = pathCoordinates[i];
+      if (coord[0] === currentPosition[0] && coord[1] === currentPosition[1]) {
+        currentIndex = i;
+        break;
+      }
+    }
+    if (currentIndex >= 0 && currentIndex < pathCoordinates.length - 1) {
+      end = pathCoordinates[currentIndex + 1];
+    } else {
+      // 如果找不到当前位置，使用路径的前两个点
+      start = pathCoordinates[0];
+      end = pathCoordinates[1];
+    }
+  } else {
+    // 如果没有当前位置，使用路径的前两个点
+    start = pathCoordinates[0];
+    end = pathCoordinates[1];
+  }
+
+  // 计算是否需要翻转
+  const dx = end[0] - start[0];
+  const shouldFlip = dx < 0;
+
+  // 更新翻转状态
+  const markerContent = markerRef.getContent();
+  if (markerContent && markerContent.nodeType === 1) {
+    // content 是 DOM 元素，直接查找 img 并更新
+    const imgElement = markerContent.querySelector("img");
+    if (imgElement) {
+      imgElement.style.transform = shouldFlip ? "scaleX(-1)" : "scaleX(1)";
+    }
+  }
+};
 
 /**
  * DeliveryMap 组件
@@ -430,18 +511,31 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
         // 创建车辆标记
         const markerPosition = currentPosition ||
           pathCoordinates[0] || [120.153576, 30.287459];
+
+        // 创建 DOM 元素作为 marker 的 content，这样可以直接访问和更新
+        const markerContainer = document.createElement("div");
+        markerContainer.style.display = "flex";
+        markerContainer.style.justifyContent = "center";
+        markerContainer.style.alignItems = "center";
+
+        const markerImg = document.createElement("img");
+        markerImg.src = riderIconUrl;
+        markerImg.style.width = "48px";
+        markerImg.style.height = "48px";
+        markerImg.style.display = "block";
+        markerImg.style.transform = "scaleX(1)";
+        markerImg.style.transition = "transform 0.2s ease";
+
+        markerContainer.appendChild(markerImg);
+
         const marker = new AMap.Marker({
           map: map,
           position: markerPosition,
-          content: `
-            <div style="display: flex; justify-content: center; align-items: center;">
-              <img src="${riderIconUrl}" style="width: 48px; height: 48px; display: block;" />
-            </div>
-          `,
+          content: markerContainer,
           offset: new AMap.Pixel(0, 0),
           anchor: "center",
           zIndex: 5, // 降低 z-index，确保不会覆盖底部面板（面板 z-index 为 10）
-          angle: 0,
+          angle: 0, // 始终保持角度为0（朝上）
         });
         markerRef.current = marker;
 
@@ -526,6 +620,11 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
     if (pathCoordinates.length > 0) {
       polylineRef.current.setPath(pathCoordinates);
 
+      // 更新标记的翻转状态（根据路径方向）
+      if (markerRef.current && pathCoordinates.length >= 2) {
+        updateMarkerFlip(markerRef.current, pathCoordinates, currentPosition);
+      }
+
       // 如果启用动画路径且没有已走过的路径，开始动画渲染
       if (
         enableAnimatedPath &&
@@ -560,6 +659,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
     }
   }, [
     pathCoordinates,
+    currentPosition,
     enableAnimatedPath,
     autoFitView,
     fitViewPadding,
@@ -613,7 +713,7 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
         currentPosition,
         1000, // 1秒动画
         () => {
-          // 移动完成后，调整视图
+          // 移动完成后，调整视图和翻转状态
           if (autoFitView && mapRef.current && markerRef.current) {
             const objectsToFit: any[] = [markerRef.current];
             if (traveledPolylineRef.current) {
@@ -630,13 +730,32 @@ export const DeliveryMap: React.FC<DeliveryMapProps> = ({
               }
             });
           }
+          // 更新翻转状态
+          if (pathCoordinates.length >= 2) {
+            updateMarkerFlip(
+              markerRef.current,
+              pathCoordinates,
+              currentPosition
+            );
+          }
         }
       );
     } else {
       // 如果没有移动器，直接设置位置
       markerRef.current.setPosition(currentPosition);
+      // 更新翻转状态
+      if (pathCoordinates.length >= 2) {
+        updateMarkerFlip(markerRef.current, pathCoordinates, currentPosition);
+      }
     }
-  }, [currentPosition, autoFitView, fitViewPadding, maxZoom, isMapReady]);
+  }, [
+    currentPosition,
+    pathCoordinates,
+    autoFitView,
+    fitViewPadding,
+    maxZoom,
+    isMapReady,
+  ]);
 
   return (
     <div

@@ -157,10 +157,18 @@ export async function orderController(fastify: FastifyInstance) {
       userId?: string;
       status?: string;
       searchQuery?: string;
+      isAbnormal?: string; // 异常订单筛选
       // 排序
       sortBy?: "createTime" | "amount" | "status" | "recipientName";
       sortDirection?: "ASC" | "DESC";
     };
+
+    // 解析 isAbnormal 参数（支持 "true"/"false" 字符串）
+    let isAbnormal: boolean | undefined = undefined;
+    if (queryParams.isAbnormal !== undefined) {
+      isAbnormal =
+        queryParams.isAbnormal === "true" || queryParams.isAbnormal === "1";
+    }
 
     const finalQueryParams: OrderListQueryDTO = {
       page: parseInt(queryParams.page || "1", 10),
@@ -168,6 +176,7 @@ export async function orderController(fastify: FastifyInstance) {
       userId: queryParams.userId,
       status: queryParams.status,
       searchQuery: queryParams.searchQuery,
+      isAbnormal: isAbnormal,
       // 排序参数
       sortBy: queryParams.sortBy,
       sortDirection: queryParams.sortDirection,

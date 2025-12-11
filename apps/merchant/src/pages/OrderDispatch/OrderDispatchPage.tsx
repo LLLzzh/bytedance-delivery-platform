@@ -36,6 +36,7 @@ interface OrderItem {
   createTime: string; // 格式：'YYYY-MM-DD HH:mm'
   startLngLat?: [number, number];
   endLngLat?: [number, number];
+  isAbnormal?: boolean; // 是否异常订单
 }
 
 interface QueryParams {
@@ -324,7 +325,7 @@ function OrderDispatchPage() {
         },
         {
           label: "异常订单",
-          value: "待返回",
+          value: String(statistics.abnormalCount),
           color: "#fff1f0",
           textColor: "#cf1322",
           status: "abnormal" as StatusType,
@@ -365,6 +366,7 @@ function OrderDispatchPage() {
         createTime: formatTime(order.createTime),
         startLngLat: order.routePath?.[0] as [number, number] | undefined,
         endLngLat: order.recipientCoords as [number, number],
+        isAbnormal: order.isAbnormal,
       }));
 
       setOrders(orders);
@@ -576,10 +578,13 @@ function OrderDispatchPage() {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      render: (status: StatusType) => (
-        <Tag color={statusMap[status].color}>{statusMap[status].label}</Tag>
+      render: (status: StatusType, record: OrderItem) => (
+        <Space size="small">
+          <Tag color={statusMap[status].color}>{statusMap[status].label}</Tag>
+          {record.isAbnormal && <Tag color="red">异常</Tag>}
+        </Space>
       ),
-      width: 100,
+      width: 120,
     },
     {
       title: "操作",

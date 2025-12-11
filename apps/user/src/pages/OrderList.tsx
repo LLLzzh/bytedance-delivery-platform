@@ -574,7 +574,7 @@ const OrderList: React.FC = () => {
                                   }}
                                   ellipsis={{ tooltip: true }}
                                 >
-                                  ⚠️ {item.abnormalReason}
+                                  {item.abnormalReason}
                                 </Text>
                               )}
                               <Text
@@ -594,13 +594,16 @@ const OrderList: React.FC = () => {
                                   gap: "4px",
                                   fontSize: "12px",
                                   color: "#999",
+                                  width: "90%",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
                                 }}
                               >
                                 <EnvironmentOutlined
                                   style={{ fontSize: "10px" }}
                                 />
                                 <Text
-                                  ellipsis={{ tooltip: true }}
                                   style={{ fontSize: "12px", color: "#999" }}
                                 >
                                   {item.recipientAddress}
@@ -612,6 +615,7 @@ const OrderList: React.FC = () => {
                                   justifyContent: "space-between",
                                   alignItems: "center",
                                   marginTop: "4px",
+                                  maxWidth: "90%",
                                 }}
                               >
                                 <Text

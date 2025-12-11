@@ -11,6 +11,8 @@ import {
   message,
   Spin,
   Empty,
+  Alert,
+  Tag,
 } from "antd";
 import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
 import { DeliveryMap } from "@repo/ui";
@@ -153,12 +155,42 @@ const OrderDetailPage: React.FC = () => {
             >
               {/* 订单头部 */}
               <Card size="small">
-                <Title level={5} style={{ margin: 0, marginBottom: 8 }}>
-                  订单详情 {order.id}
-                </Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  创建时间: {createTime}
-                </Text>
+                <Space
+                  direction="vertical"
+                  size="small"
+                  style={{ width: "100%" }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Title level={5} style={{ margin: 0 }}>
+                      订单详情 {order.id}
+                    </Title>
+                    {order.isAbnormal && (
+                      <Tag color="error" style={{ margin: 0 }}>
+                        异常订单
+                      </Tag>
+                    )}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    创建时间: {createTime}
+                  </Text>
+                  {order.isAbnormal && (
+                    <Alert
+                      message="异常提醒"
+                      description={
+                        order.abnormalReason || "订单出现异常情况，请及时处理"
+                      }
+                      type="error"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                    />
+                  )}
+                </Space>
               </Card>
 
               {/* 收货人信息 */}
@@ -234,26 +266,53 @@ const OrderDetailPage: React.FC = () => {
               {/* 物流日志 */}
               <Card title="物流日志" size="small">
                 <div style={{ textAlign: "left" }}>
-                  {logisticsLogs.map((log, index) => (
-                    <div
-                      key={index}
-                      style={{
-                        padding: "6px 0",
-                        borderBottom:
-                          index < logisticsLogs.length - 1
-                            ? "1px solid #f0f0f0"
-                            : "none",
-                      }}
-                    >
-                      <Text
-                        type="secondary"
-                        style={{ fontSize: 12, marginRight: 8 }}
+                  {logisticsLogs.map((log, index) => {
+                    const isAbnormalLog =
+                      order.isAbnormal &&
+                      (log.status.includes("异常") ||
+                        (order.abnormalReason &&
+                          log.status === order.abnormalReason));
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          padding: "6px 0",
+                          borderBottom:
+                            index < logisticsLogs.length - 1
+                              ? "1px solid #f0f0f0"
+                              : "none",
+                          backgroundColor: isAbnormalLog
+                            ? "#fff2f0"
+                            : "transparent",
+                          borderRadius: isAbnormalLog ? "4px" : "0",
+                          paddingLeft: isAbnormalLog ? "8px" : "0",
+                          paddingRight: isAbnormalLog ? "8px" : "0",
+                        }}
                       >
-                        {log.time}
-                      </Text>
-                      <Text style={{ fontSize: 12 }}>{log.status}</Text>
-                    </div>
-                  ))}
+                        <Text
+                          type="secondary"
+                          style={{ fontSize: 12, marginRight: 8 }}
+                        >
+                          {log.date} {log.time}
+                        </Text>
+                        {isAbnormalLog ? (
+                          <Space>
+                            <Tag
+                              color="error"
+                              style={{ margin: 0, fontSize: 11 }}
+                            >
+                              异常
+                            </Tag>
+                            <Text style={{ fontSize: 12, color: "#ff4d4f" }}>
+                              {log.status}
+                            </Text>
+                          </Space>
+                        ) : (
+                          <Text style={{ fontSize: 12 }}>{log.status}</Text>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </Card>
             </Space>
