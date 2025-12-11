@@ -68,14 +68,6 @@ services:
       - "3004:80"
     restart: unless-stopped
 
-  dashboard:
-    build:
-      context: .
-      dockerfile: apps/dashboard/Dockerfile
-    container_name: my-turborepo-dashboard
-    ports:
-      - "3005:80"
-    restart: unless-stopped
 
 volumes:
   postgres_data:
